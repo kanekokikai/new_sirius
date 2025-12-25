@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { featureCards } from "../data/mockData";
 import { featureContent } from "../data/featureContent";
@@ -89,6 +89,68 @@ const FeaturePlaceholder = () => {
   const [sitesFilter, setSitesFilter] = useState<SitesFilter>(initialSitesFilter);
   const [showOrdersModal, setShowOrdersModal] = useState(false);
   const [orderCreateType, setOrderCreateType] = useState<OrderCreateType | null>(null);
+
+  type OrderDemoForm = {
+    inboundDate: string;
+    inboundTimeFrom: string;
+    inboundTimeTo: string;
+    orderTaker: string;
+    transportDivision: "回送" | "自社" | "外注" | "";
+    transportBase: "本社" | "支店" | "ヤード" | "";
+    customer: string;
+    siteName: string;
+    siteAddress: string;
+    constructionName: string;
+    vehicles: string[];
+    wrecker: "無" | "有" | "ユニック";
+    pickupPlannedDate: string;
+    useDays: string;
+    orderer: string;
+    siteContact: string;
+    transportFeeVehicleSize: string;
+    transportFeeAddress: string;
+    transportFeeAmount: string;
+    noteFront: string;
+    noteFactory: string;
+    noteDriver: string;
+  };
+
+  const vehicleOptions = useMemo(
+    () => ["ダンプ", "2t", "3t", "4t", "7t", "ショート", "10t", "大型", "指定車"],
+    []
+  );
+
+  const createInitialOrderDemoForm = (): OrderDemoForm => ({
+    inboundDate: "",
+    inboundTimeFrom: "",
+    inboundTimeTo: "",
+    orderTaker: "",
+    transportDivision: "回送",
+    transportBase: "本社",
+    customer: "",
+    siteName: "",
+    siteAddress: "",
+    constructionName: "",
+    vehicles: [],
+    wrecker: "無",
+    pickupPlannedDate: "",
+    useDays: "",
+    orderer: "",
+    siteContact: "",
+    transportFeeVehicleSize: "",
+    transportFeeAddress: "",
+    transportFeeAmount: "",
+    noteFront: "",
+    noteFactory: "",
+    noteDriver: ""
+  });
+
+  const [orderDemo, setOrderDemo] = useState<OrderDemoForm>(createInitialOrderDemoForm);
+
+  useEffect(() => {
+    if (!orderCreateType) return;
+    setOrderDemo(createInitialOrderDemoForm());
+  }, [orderCreateType]);
 
   const contentSections = useMemo(
     () => (feature ? featureContent[feature.key] ?? [] : []),
@@ -661,53 +723,279 @@ const FeaturePlaceholder = () => {
                 <p style={{ marginTop: 0, color: "#475569" }}>
                   入力内容は保存されません。画面イメージのみのダミーモーダルです。
                 </p>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                    gap: 12,
-                    alignItems: "flex-start",
-                    marginTop: 12
-                  }}
-                >
-                  <div className="filter-group">
-                    <label>受注種類</label>
-                    <input className="filter-input" value={orderCreateType} readOnly />
+                <div className="order-demo-form" style={{ marginTop: 12 }}>
+                  <div className="order-demo-row cols-4">
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">搬入日</div>
+                      <input
+                        className="order-demo-input"
+                        type="date"
+                        value={orderDemo.inboundDate}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, inboundDate: e.target.value }))}
+                      />
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">搬入時間</div>
+                      <div className="order-demo-inline">
+                        <input
+                          className="order-demo-input"
+                          type="time"
+                          value={orderDemo.inboundTimeFrom}
+                          onChange={(e) => setOrderDemo((s) => ({ ...s, inboundTimeFrom: e.target.value }))}
+                        />
+                        <span className="order-demo-sep">〜</span>
+                        <input
+                          className="order-demo-input"
+                          type="time"
+                          value={orderDemo.inboundTimeTo}
+                          onChange={(e) => setOrderDemo((s) => ({ ...s, inboundTimeTo: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">受注者</div>
+                      <input
+                        className="order-demo-input"
+                        value={orderDemo.orderTaker}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, orderTaker: e.target.value }))}
+                        placeholder="例) 田中"
+                      />
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">回送区分</div>
+                      <div className="order-demo-inline">
+                        <select
+                          className="order-demo-input"
+                          value={orderDemo.transportDivision}
+                          onChange={(e) =>
+                            setOrderDemo((s) => ({
+                              ...s,
+                              transportDivision: e.target.value as OrderDemoForm["transportDivision"]
+                            }))
+                          }
+                        >
+                          <option value="回送">回送</option>
+                          <option value="自社">自社</option>
+                          <option value="外注">外注</option>
+                          <option value="">未選択</option>
+                        </select>
+                        <select
+                          className="order-demo-input"
+                          value={orderDemo.transportBase}
+                          onChange={(e) =>
+                            setOrderDemo((s) => ({
+                              ...s,
+                              transportBase: e.target.value as OrderDemoForm["transportBase"]
+                            }))
+                          }
+                        >
+                          <option value="本社">本社</option>
+                          <option value="支店">支店</option>
+                          <option value="ヤード">ヤード</option>
+                          <option value="">未選択</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
-                  <div className="filter-group">
-                    <label>得意先</label>
-                    <input className="filter-input" placeholder="例) ABC建設" />
+
+                  <div className="order-demo-row cols-3">
+                    <div className="order-demo-cell span-2">
+                      <div className="order-demo-label">得意先</div>
+                      <input
+                        className="order-demo-input"
+                        value={orderDemo.customer}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, customer: e.target.value }))}
+                        placeholder="例) ABC建設"
+                      />
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">受注種類</div>
+                      <input className="order-demo-input" value={orderCreateType} readOnly />
+                      <button className="button" type="button" disabled style={{ marginTop: 8 }}>
+                        地図フォルダー（ダミー）
+                      </button>
+                    </div>
                   </div>
-                  <div className="filter-group">
-                    <label>現場</label>
-                    <input className="filter-input" placeholder="例) 高速道路改修A" />
+
+                  <div className="order-demo-row cols-3">
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">現場</div>
+                      <input
+                        className="order-demo-input"
+                        value={orderDemo.siteName}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, siteName: e.target.value }))}
+                        placeholder="例) 現場A"
+                      />
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">住所</div>
+                      <input
+                        className="order-demo-input"
+                        value={orderDemo.siteAddress}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, siteAddress: e.target.value }))}
+                        placeholder="例) 東京都○○"
+                      />
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">工事名</div>
+                      <input
+                        className="order-demo-input"
+                        value={orderDemo.constructionName}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, constructionName: e.target.value }))}
+                        placeholder="例) ○○工事"
+                      />
+                    </div>
                   </div>
-                  <div className="filter-group">
-                    <label>機械</label>
-                    <input className="filter-input" placeholder="例) ZX120 / WA100" />
+
+                  <div className="order-demo-row cols-4">
+                    <div className="order-demo-cell span-2">
+                      <div className="order-demo-label">車輛（複数選択可）</div>
+                      <div className="order-demo-checkboxes">
+                        {vehicleOptions.map((v) => {
+                          const checked = orderDemo.vehicles.includes(v);
+                          return (
+                            <label key={v} className="order-demo-check">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setOrderDemo((s) => {
+                                    const next = checked ? s.vehicles.filter((x) => x !== v) : [...s.vehicles, v];
+                                    return { ...s, vehicles: next };
+                                  })
+                                }
+                              />
+                              <span>{v}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">レッカー</div>
+                      <select
+                        className="order-demo-input"
+                        value={orderDemo.wrecker}
+                        onChange={(e) =>
+                          setOrderDemo((s) => ({ ...s, wrecker: e.target.value as OrderDemoForm["wrecker"] }))
+                        }
+                      >
+                        <option value="無">無</option>
+                        <option value="有">有</option>
+                        <option value="ユニック">ユニック</option>
+                      </select>
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">引取予定日 / 使用日数</div>
+                      <div className="order-demo-inline">
+                        <input
+                          className="order-demo-input"
+                          type="date"
+                          value={orderDemo.pickupPlannedDate}
+                          onChange={(e) => setOrderDemo((s) => ({ ...s, pickupPlannedDate: e.target.value }))}
+                        />
+                        <input
+                          className="order-demo-input"
+                          inputMode="numeric"
+                          value={orderDemo.useDays}
+                          onChange={(e) => setOrderDemo((s) => ({ ...s, useDays: e.target.value }))}
+                          placeholder="日数"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="filter-group">
-                    <label>予定日</label>
-                    <input className="filter-input" type="date" />
+
+                  <div className="order-demo-row cols-3">
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">発注者</div>
+                      <input
+                        className="order-demo-input"
+                        value={orderDemo.orderer}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, orderer: e.target.value }))}
+                        placeholder="例) ○○様"
+                      />
+                    </div>
+                    <div className="order-demo-cell span-2">
+                      <div className="order-demo-label">現場連絡先</div>
+                      <div className="order-demo-inline">
+                        <input
+                          className="order-demo-input"
+                          value={orderDemo.siteContact}
+                          onChange={(e) => setOrderDemo((s) => ({ ...s, siteContact: e.target.value }))}
+                          placeholder="例) 090-xxxx-xxxx / 担当: △△"
+                        />
+                        <button className="button" type="button" disabled>
+                          商品追加（ダミー）
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="filter-group">
-                    <label>担当者</label>
-                    <input className="filter-input" placeholder="例) 田中 / 佐藤" />
+
+                  <div className="order-demo-row cols-3">
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">回送費：車輛サイズ</div>
+                      <select
+                        className="order-demo-input"
+                        value={orderDemo.transportFeeVehicleSize}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, transportFeeVehicleSize: e.target.value }))}
+                      >
+                        <option value="">未選択</option>
+                        {vehicleOptions.map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">回送費：住所</div>
+                      <input
+                        className="order-demo-input"
+                        value={orderDemo.transportFeeAddress}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, transportFeeAddress: e.target.value }))}
+                        placeholder="例) ○○県○○市..."
+                      />
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">回送費：金額</div>
+                      <input
+                        className="order-demo-input"
+                        inputMode="numeric"
+                        value={orderDemo.transportFeeAmount}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, transportFeeAmount: e.target.value }))}
+                        placeholder="例) 30000"
+                      />
+                    </div>
                   </div>
-                  <div className="filter-group" style={{ gridColumn: "1 / -1" }}>
-                    <label>備考</label>
-                    <textarea
-                      style={{
-                        width: "100%",
-                        minHeight: 120,
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                        border: "1px solid #d0d7e2",
-                        fontSize: 15,
-                        resize: "vertical"
-                      }}
-                      placeholder="追加情報や伝達事項を入力（ダミー）"
-                    />
+
+                  <div className="order-demo-row cols-3 notes">
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">フロント備考</div>
+                      <textarea
+                        className="order-demo-textarea"
+                        value={orderDemo.noteFront}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, noteFront: e.target.value }))}
+                        placeholder="フロント向けメモ"
+                      />
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">工場備考</div>
+                      <textarea
+                        className="order-demo-textarea"
+                        value={orderDemo.noteFactory}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, noteFactory: e.target.value }))}
+                        placeholder="工場向けメモ"
+                      />
+                    </div>
+                    <div className="order-demo-cell">
+                      <div className="order-demo-label">ドライバー備考</div>
+                      <textarea
+                        className="order-demo-textarea"
+                        value={orderDemo.noteDriver}
+                        onChange={(e) => setOrderDemo((s) => ({ ...s, noteDriver: e.target.value }))}
+                        placeholder="ドライバー向けメモ"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
