@@ -5,8 +5,11 @@ import LoginPage from "./pages/LoginPage";
 import FeaturePlaceholder from "./pages/FeaturePlaceholder";
 import DispatchInstructionPage from "./pages/DispatchInstructionPage";
 
+const rawBaseUrl = import.meta.env.BASE_URL;
+const routerBasename = rawBaseUrl === "/" ? "/" : rawBaseUrl.replace(/\/$/, "");
+
 const App = () => (
-  <BrowserRouter basename={import.meta.env.BASE_URL}>
+  <BrowserRouter basename={routerBasename}>
     <Routes>
       <Route path="/" element={<LoginPage />} />
       <Route
