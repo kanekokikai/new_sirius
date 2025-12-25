@@ -6,7 +6,7 @@ import FeaturePlaceholder from "./pages/FeaturePlaceholder";
 import DispatchInstructionPage from "./pages/DispatchInstructionPage";
 
 const App = () => (
-  <BrowserRouter>
+  <BrowserRouter basename={import.meta.env.BASE_URL}>
     <Routes>
       <Route path="/" element={<LoginPage />} />
       <Route
