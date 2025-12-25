@@ -35,3 +35,4 @@ export interface User {
   permissions: Partial<Record<Department, FeatureKey[]>>;
 }
 
+

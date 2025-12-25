@@ -318,10 +318,10 @@ const FeaturePlaceholder = () => {
               />
             </div>
             <div className="filter-group">
-              <label>購入日（開始）</label>
+              <label>購入日</label>
               <input
                 className="filter-input"
-                placeholder="例) 2023-04-01"
+                placeholder="例) 2024 / 2024-04 / 2024-04-01"
                 value={machineFilter.purchaseFrom}
                 onChange={(e) =>
                   setMachineFilter((s) => ({ ...s, purchaseFrom: e.target.value }))
@@ -329,10 +329,10 @@ const FeaturePlaceholder = () => {
               />
             </div>
             <div className="filter-group">
-              <label>購入日（終了）</label>
+              <label>売却日</label>
               <input
                 className="filter-input"
-                placeholder="例) 2023-12-31"
+                placeholder="例) 2024 / 2024-12 / 2024-12-31"
                 value={machineFilter.purchaseTo}
                 onChange={(e) => setMachineFilter((s) => ({ ...s, purchaseTo: e.target.value }))}
               />

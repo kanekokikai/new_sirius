@@ -23,3 +23,4 @@ const DepartmentSwitcher = ({ departments, active, onChange }: Props) => (
 
 export default DepartmentSwitcher;
 
+

@@ -39,6 +39,7 @@ export type SitesFilter = {
 };
 
 const toLower = (value: string) => value.trim().toLowerCase();
+const toDigits = (value: string) => value.replace(/\D/g, "");
 
 export const filterInventorySections = (
   sections: TableSection[],
@@ -77,10 +78,13 @@ export const filterMachineSections = (
   filter: MachineFilter
 ) => {
   const { kindId, categoryId, productNo, purchaseFrom, purchaseTo, division } = filter;
-  const startDate = purchaseFrom.trim();
-  const endDate = purchaseTo.trim();
-  const hasAnyFilter = [kindId, categoryId, productNo, startDate, endDate, division].some((v) =>
-    v.trim()
+  // NOTE:
+  // - purchaseFrom: 画面上は「購入日」(年月日検索) -> row[13]
+  // - purchaseTo:   画面上は「売却日」(年月日検索) -> row[18]
+  const purchaseDateQuery = purchaseFrom.trim();
+  const soldDateQuery = purchaseTo.trim();
+  const hasAnyFilter = [kindId, categoryId, productNo, purchaseDateQuery, soldDateQuery, division].some(
+    (v) => v.trim()
   );
   const q = toLower(search);
   const applyLegacy = !!q && !hasAnyFilter;
@@ -92,9 +96,27 @@ export const filterMachineSections = (
       const matchesCategory = !categoryId || String(row[1]).toLowerCase().includes(toLower(categoryId));
       const matchesProductNo =
         !productNo || String(row[2]).toLowerCase().includes(toLower(productNo));
-      const purchaseDate = String(row[13]);
-      const matchesPurchaseFrom = !startDate || purchaseDate >= startDate;
-      const matchesPurchaseTo = !endDate || purchaseDate <= endDate;
+      const purchaseDateRaw = String(row[13] ?? "");
+      const soldDateRaw = String(row[18] ?? "");
+      const purchaseDate = purchaseDateRaw.toLowerCase();
+      const soldDate = soldDateRaw.toLowerCase();
+      const purchaseQ = purchaseDateQuery.toLowerCase();
+      const soldQ = soldDateQuery.toLowerCase();
+      const purchaseQDigits = toDigits(purchaseQ);
+      const soldQDigits = toDigits(soldQ);
+      const purchaseDateDigits = toDigits(purchaseDate);
+      const soldDateDigits = toDigits(soldDate);
+
+      // 「2024」だけで「2024-xx-xx」や「2024/xx/xx」にマッチさせたいので
+      // 文字列includesと「数字だけ」includesの両方で判定する
+      const matchesPurchaseDate =
+        !purchaseDateQuery ||
+        purchaseDate.includes(purchaseQ) ||
+        (!!purchaseQDigits && purchaseDateDigits.includes(purchaseQDigits));
+      const matchesSoldDate =
+        !soldDateQuery ||
+        soldDate.includes(soldQ) ||
+        (!!soldQDigits && soldDateDigits.includes(soldQDigits));
       const matchesDivision =
         !division || String(row[6]).toLowerCase().includes(toLower(division));
 
@@ -103,8 +125,8 @@ export const filterMachineSections = (
           matchesKind &&
           matchesCategory &&
           matchesProductNo &&
-          matchesPurchaseFrom &&
-          matchesPurchaseTo &&
+          matchesPurchaseDate &&
+          matchesSoldDate &&
           matchesDivision
         );
       }
