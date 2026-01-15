@@ -1,0 +1,10 @@
+部署,利用可能機能キー
+フロント,"inventory|machine|orders|dispatch|sites|data"
+営業,"inventory|orders|sites|ar|dispatch|data"
+経理,"ar|invoices|adjustment|machine"
+ドライバー,"dispatch"
+工場,"dispatch|inventory|repair"
+AK,"orders|data|dispatch"
+マスター管理,"masters"
+
+

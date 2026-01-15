@@ -1,0 +1,8 @@
+画面ID,画面名,パス,認証,備考
+S-001,ログイン,/,不要,"モック認証。ユーザーID/パスワード未入力でゲストログイン"
+S-002,ホーム,/home,必須,"部署切替 + 機能カード表示"
+S-003,機能プレースホルダー,/feature/:featureKey,必須,"deptクエリで部署指定。権限に応じて閲覧可否"
+S-004,配車指示書（詳細）,/feature/dispatch/:instructionKey,必須,"instructionKey: inbound/pickup/transfer/truckPlan"
+S-999,フォールバック,*,-,ログインへ遷移
+
+
