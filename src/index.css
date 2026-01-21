@@ -27,6 +27,179 @@ a {
   padding: 24px;
 }
 
+/* ===== App layout (sidebar) ===== */
+.layout-root {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.layout-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 16px;
+}
+
+.layout-main {
+  min-width: 0;
+}
+
+.sidebar {
+  height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(8px);
+}
+
+.sidebar-header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.sidebar-title {
+  font-weight: 900;
+  letter-spacing: 0.2px;
+}
+
+.sidebar-subtitle {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.sidebar-nav {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.sidebar-link {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, border 0.15s ease, transform 0.1s ease;
+}
+
+.sidebar-link:hover {
+  background: #f1f5f9;
+  transform: translateY(-1px);
+}
+
+.sidebar-link.active {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(59, 130, 246, 0.08));
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+.sidebar-link-title {
+  font-weight: 800;
+}
+
+.sidebar-link-sub {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  gap: 10px;
+}
+
+.sidebar-user {
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar-user-label {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sidebar-user-value {
+  font-weight: 800;
+}
+
+.sidebar-logout {
+  width: 100%;
+}
+
+.sidebar-toggle {
+  display: none;
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  .layout-root {
+    grid-template-columns: 1fr;
+  }
+
+  .layout-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(320px, 86vw);
+    height: 100vh;
+    padding: 12px;
+    transform: translateX(-110%);
+    transition: transform 0.2s ease;
+    z-index: 1200;
+  }
+
+  .layout-sidebar.open {
+    transform: translateX(0);
+  }
+
+  .layout-main {
+    padding-top: 6px;
+  }
+
+  .sidebar {
+    height: calc(100vh - 24px);
+  }
+
+  .sidebar-toggle {
+    display: inline-flex;
+    position: fixed;
+    left: 12px;
+    top: 12px;
+    z-index: 1100;
+    border-radius: 12px;
+    padding: 8px 10px;
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 1150;
+    border: none;
+    padding: 0;
+  }
+
+  /* keep page content away from the toggle button */
+  .app-shell {
+    padding-top: 56px;
+  }
+}
+
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -258,6 +431,68 @@ table {
   margin-top: 8px;
 }
 
+/* 搬入 受注検索結果（PDF/スプレッドシート見た目の再現用） */
+.inbound-pdf-table {
+  table-layout: fixed;
+  font-size: 12px;
+  /* 100%で引き伸ばされると「横幅が広い」見た目になるので、列幅合計にフィットさせる */
+  width: max-content;
+  max-width: none;
+  margin-top: 8px;
+}
+.inbound-pdf-table th,
+.inbound-pdf-table td {
+  padding: 6px 8px;
+  border: 1px solid #dadce0; /* Google Sheetsっぽい罫線 */
+  vertical-align: middle;
+}
+.inbound-pdf-table th {
+  background: #f1f3f4;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+.inbound-pdf-table td {
+  background: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 文章が入るセルは折り返し許可（画像の「○都筑移動…」等） */
+.inbound-pdf-table td[data-col="2"],
+.inbound-pdf-table td[data-col="11"] {
+  white-space: pre-wrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+.inbound-pdf-table td[data-col="1"],
+.inbound-pdf-table td[data-col="3"],
+.inbound-pdf-table td[data-col="4"],
+.inbound-pdf-table td[data-col="6"],
+.inbound-pdf-table td[data-col="10"] {
+  text-align: center;
+}
+.inbound-pdf-row-start td {
+  border-top-width: 2px;
+}
+
+/* 受注検索結果を画面いっぱいに広げる（メニュー上に被ってもOK） */
+.orders-results-fullbleed {
+  /* 検索条件の下に“同じ画面の流れ”で表示しつつ、横方向はviewport基準で中央寄せ */
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  width: fit-content;
+  max-width: calc(100vw - 24px);
+  overflow: auto;
+  z-index: 1000; /* サイドメニューより前面に出してOK */
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  padding: 12px 16px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+}
+
 th,
 td {
   padding: 10px 12px;
@@ -427,7 +662,7 @@ th {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 12px;
   z-index: 1000;
 }
 
@@ -435,7 +670,7 @@ th {
   background: #ffffff;
   border-radius: 12px;
   width: min(1100px, 92vw);
-  max-height: 84vh;
+  max-height: 92vh;
   box-shadow: 0 18px 38px rgba(15, 23, 42, 0.15);
   display: flex;
   flex-direction: column;
@@ -446,17 +681,19 @@ th {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 12px 16px;
   border-bottom: 1px solid #e2e8f0;
 }
 
 .modal-body {
-  padding: 16px 20px;
+  padding: 12px 16px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
 }
 
 .modal-footer {
-  padding: 12px 20px 16px;
+  padding: 10px 16px 12px;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -488,7 +725,7 @@ th {
 }
 
 .order-demo-cell {
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-left: 1px solid #cbd5e1;
   background: #ffffff;
   min-width: 0;
@@ -503,25 +740,25 @@ th {
 }
 
 .order-demo-label {
-  font-size: 12px;
+  font-size: 11px;
   color: #334155;
   font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .order-demo-input {
   width: 100%;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 5px 8px;
   border-radius: 8px;
   border: 1px solid #d0d7e2;
   background: #ffffff;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .order-demo-inline {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -542,9 +779,9 @@ th {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12px;
   color: #0f172a;
-  padding: 4px 8px;
+  padding: 3px 6px;
   border-radius: 999px;
   border: 1px solid #e2e8f0;
   background: #f8fafc;
@@ -556,11 +793,11 @@ th {
 
 .order-demo-textarea {
   width: 100%;
-  min-height: 110px;
-  padding: 10px 12px;
+  min-height: 56px;
+  padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid #d0d7e2;
-  font-size: 14px;
+  font-size: 13px;
   resize: vertical;
   background: #ffffff;
 }
@@ -570,16 +807,307 @@ th {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .order-demo-row.cols-3 {
-    grid-template-columns: repeat(1, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .order-demo-cell.span-2 {
     grid-column: auto;
   }
 }
 
+@media (max-width: 640px) {
+  .order-demo-row.cols-4,
+  .order-demo-row.cols-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Order create modal: pack layout and prevent scrollbars */
+.modal-overlay.order-create-overlay {
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.modal.order-create-modal {
+  width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+}
+
+.modal.order-create-modal .modal-header {
+  padding: 8px 12px;
+}
+
+.modal.order-create-modal .modal-body {
+  padding: 8px 12px;
+  overflow: auto; /* allow content, hide scrollbar below */
+  scrollbar-width: none; /* Firefox: hide scrollbar */
+}
+.modal.order-create-modal .modal-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.modal.order-create-modal .modal-footer {
+  padding: 8px 12px 10px;
+}
+
+.modal.order-create-modal .order-demo-cell {
+  padding: 4px 6px;
+}
+
+.modal.order-create-modal .order-demo-label {
+  font-size: 10px;
+  margin-bottom: 2px;
+}
+
+.modal.order-create-modal .order-demo-input {
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  height: 28px;
+}
+
+.modal.order-create-modal .order-demo-check {
+  font-size: 11px;
+  padding: 2px 5px;
+}
+
+.modal.order-create-modal .order-demo-textarea {
+  min-height: 32px;
+  height: 32px;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  line-height: 1.2;
+  resize: none;
+}
+
+.modal.order-create-modal .order-demo-checkboxes {
+  gap: 6px 8px;
+}
+
+.modal.order-create-modal .order-demo-check input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.modal.order-create-modal .order-demo-inline {
+  gap: 4px;
+}
+
+.modal.order-create-modal .order-demo-form {
+  /* Too wide makes it hard to scan: constrain and center */
+  max-width: 1040px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Shrink input widths so the form is scannable */
+.modal.order-create-modal .order-demo-cell .order-demo-input {
+  width: 100%;
+  max-width: 320px; /* ~1/2〜1/3 of a wide cell */
+}
+
+/* Wider fields (span-2) can stay wider */
+.modal.order-create-modal .order-demo-cell.span-2 .order-demo-input {
+  max-width: 760px;
+}
+
+/* Inline pairs (time/date + days) should not stretch */
+.modal.order-create-modal .order-demo-inline .order-demo-input {
+  width: 140px;
+  max-width: 140px;
+}
+
+.modal.order-create-modal .modal-header h3 {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+/* Order lines table (商品明細) */
+.modal.order-create-modal .order-lines {
+  max-width: 1040px;
+  margin: 0 auto 8px;
+}
+
+.modal.order-create-modal .order-lines-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.modal.order-create-modal .order-lines-table-wrap {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: auto;
+  max-width: 100%;
+  scrollbar-width: none; /* hide scrollbar */
+}
+.modal.order-create-modal .order-lines-table-wrap::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.modal.order-create-modal .order-lines-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 11px;
+  min-width: 1500px; /* wide like the provided table image */
+}
+
+.modal.order-create-modal .order-lines-table th,
+.modal.order-create-modal .order-lines-table td {
+  border: 1px solid #e2e8f0;
+  padding: 4px 6px;
+  vertical-align: middle;
+  background: #fff;
+}
+
+.modal.order-create-modal .order-lines-table th {
+  background: #f8fafc;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.modal.order-create-modal .order-lines-input {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid #d0d7e2;
+  font-size: 12px;
+  background: #ffffff;
+}
+
+.modal.order-create-modal .order-lines-th-2rows {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  line-height: 1.1;
+}
+
+.modal.order-create-modal .order-lines-2rows {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 4px;
+}
+
+/* Make the combined 明細/詳細 column compact */
+.modal.order-create-modal .order-lines-table th:first-child,
+.modal.order-create-modal .order-lines-table td:first-child {
+  width: 140px;
+}
+
+/* Combined 仕入先ID/保管 column */
+.modal.order-create-modal .order-lines-table th:nth-child(2),
+.modal.order-create-modal .order-lines-table td:nth-child(2) {
+  width: 180px;
+}
+
+/* 商品No. */
+.modal.order-create-modal .order-lines-table th:nth-child(3),
+.modal.order-create-modal .order-lines-table td:nth-child(3) {
+  width: 140px;
+}
+
+/* Combined 品名①/品名② */
+.modal.order-create-modal .order-lines-table th:nth-child(4),
+.modal.order-create-modal .order-lines-table td:nth-child(4) {
+  width: 260px;
+}
+
+.modal.order-create-modal .order-lines-table td:last-child {
+  width: 44px;
+}
+
+
+.modal.order-create-modal .modal-header .button {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.modal.order-create-modal .modal-footer .button {
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.modal.order-create-modal .order-demo-cell .button {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
 .filter-divider {
   border-top: 1px solid #e2e8f0;
   margin: 16px 0;
+}
+
+/* Pickup search results: centered split layout */
+.pickup-results-root {
+  display: grid;
+  gap: 12px;
+}
+
+.pickup-results-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.pickup-results-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+  width: min(1000px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.pickup-results-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.pickup-results-title {
+  font-weight: 900;
+  color: #334155;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.pickup-results-panel .table-container {
+  padding: 8px 10px 10px;
+}
+
+.pickup-results-panel table {
+  margin-top: 0;
+}
+
+@media (max-width: 900px) {
+  .pickup-results-split {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 900px) {

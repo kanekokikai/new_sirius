@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
+import AppLayout from "./components/AppLayout";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import FeaturePlaceholder from "./pages/FeaturePlaceholder";
@@ -17,7 +18,9 @@ const App = () => (
         path="/factory/outbound-register"
         element={
           <ProtectedRoute>
-            <OutboundRegisterPage />
+            <AppLayout>
+              <OutboundRegisterPage />
+            </AppLayout>
           </ProtectedRoute>
         }
       />
@@ -25,7 +28,9 @@ const App = () => (
         path="/feature/dispatch/:instructionKey"
         element={
           <ProtectedRoute>
-            <DispatchInstructionPage />
+            <AppLayout>
+              <DispatchInstructionPage />
+            </AppLayout>
           </ProtectedRoute>
         }
       />
@@ -33,7 +38,9 @@ const App = () => (
         path="/home"
         element={
           <ProtectedRoute>
-            <HomePage />
+            <AppLayout>
+              <HomePage />
+            </AppLayout>
           </ProtectedRoute>
         }
       />
@@ -41,7 +48,9 @@ const App = () => (
         path="/feature/:featureKey"
         element={
           <ProtectedRoute>
-            <FeaturePlaceholder />
+            <AppLayout>
+              <FeaturePlaceholder />
+            </AppLayout>
           </ProtectedRoute>
         }
       />

@@ -3,6 +3,14 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { featureCards } from "../data/mockData";
 import { featureContent } from "../data/featureContent";
 import { DispatchInstructionKey } from "../data/dispatchInstructions";
+import { pickupOrderSearchMock, PickupOrderSearchItem } from "../data/orderPickupSearchMock";
+import { pickupSearchMachinesMock, PickupSearchMachineItem } from "../data/pickupSearchMachinesMock";
+import {
+  inboundOrderSearchColumns,
+  inboundOrderSearchRawRows,
+  inboundOrderSearchColWidths
+} from "../data/inboundOrderSearchMock";
+import { InboundPdfTable } from "../components/InboundPdfTable";
 import { Department } from "../types";
 import { useAuth, getDepartmentPermissions } from "../auth/AuthContext";
 import {
@@ -41,6 +49,26 @@ const initialOrdersFilter: OrdersFilter = {
   type: "",
   customer: "",
   site: ""
+};
+
+type PickupOrderSearchForm = {
+  customerName: string; // 得意先名
+  salesRep: string; // 営業担当
+  siteName: string; // 現場
+  kind: string; // 種類
+  type: string; // 種別
+  constructionName: string; // 工事名
+  address: string; // 住所
+};
+
+const initialPickupOrderSearchForm: PickupOrderSearchForm = {
+  customerName: "",
+  salesRep: "",
+  siteName: "",
+  kind: "",
+  type: "",
+  constructionName: "",
+  address: ""
 };
 
 const initialSitesFilter: SitesFilter = {
@@ -87,8 +115,18 @@ const FeaturePlaceholder = () => {
   const [machineFilter, setMachineFilter] = useState<MachineFilter>(initialMachineFilter);
   const [ordersFilter, setOrdersFilter] = useState<OrdersFilter>(initialOrdersFilter);
   const [sitesFilter, setSitesFilter] = useState<SitesFilter>(initialSitesFilter);
-  const [showOrdersModal, setShowOrdersModal] = useState(false);
+  const [showOrdersResults, setShowOrdersResults] = useState(false);
   const [orderCreateType, setOrderCreateType] = useState<OrderCreateType | null>(null);
+  const [showPickupSearchModal, setShowPickupSearchModal] = useState(false);
+  const [pickupSearchForm, setPickupSearchForm] = useState<PickupOrderSearchForm>(
+    initialPickupOrderSearchForm
+  );
+  const [pickupSearchShowResults, setPickupSearchShowResults] = useState(false);
+  const [pickupMachineSelectedIds, setPickupMachineSelectedIds] = useState<string[]>([]);
+  const [pendingPickupCreate, setPendingPickupCreate] = useState<{
+    orderDemoPatch: Partial<OrderDemoForm>;
+    orderLines: OrderLine[];
+  } | null>(null);
 
   type OrderDemoForm = {
     inboundDate: string;
@@ -113,6 +151,28 @@ const FeaturePlaceholder = () => {
     noteFront: string;
     noteFactory: string;
     noteDriver: string;
+  };
+
+  type OrderLine = {
+    lineId: string;
+    meisai: "販売" | "レンタル";
+    shosai: "自社" | "他社";
+    supplierId: string;
+    warehouseId: string;
+    productNo: string;
+    productName1: string;
+    productName2: string;
+    productName3: string;
+    dispatchNote: string;
+    note1: string;
+    note2: string;
+    quantity: string;
+    startDate: string;
+    endDate: string;
+    contract: string;
+    dailyUnitPrice: string;
+    monthlyUnitPrice: string;
+    split: string;
   };
 
   const vehicleOptions = useMemo(
@@ -145,11 +205,41 @@ const FeaturePlaceholder = () => {
     noteDriver: ""
   });
 
+  const createInitialOrderLine = (): OrderLine => ({
+    lineId: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    meisai: "レンタル",
+    shosai: "自社",
+    supplierId: "",
+    warehouseId: "",
+    productNo: "",
+    productName1: "",
+    productName2: "",
+    productName3: "",
+    dispatchNote: "",
+    note1: "",
+    note2: "",
+    quantity: "",
+    startDate: "",
+    endDate: "",
+    contract: "",
+    dailyUnitPrice: "",
+    monthlyUnitPrice: "",
+    split: ""
+  });
+
   const [orderDemo, setOrderDemo] = useState<OrderDemoForm>(createInitialOrderDemoForm);
+  const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
 
   useEffect(() => {
     if (!orderCreateType) return;
+    if (pendingPickupCreate) {
+      setOrderDemo((s) => ({ ...createInitialOrderDemoForm(), ...pendingPickupCreate.orderDemoPatch, ...s }));
+      setOrderLines(pendingPickupCreate.orderLines);
+      setPendingPickupCreate(null);
+      return;
+    }
     setOrderDemo(createInitialOrderDemoForm());
+    setOrderLines([]);
   }, [orderCreateType]);
 
   const contentSections = useMemo(
@@ -176,6 +266,68 @@ const FeaturePlaceholder = () => {
         return filterBySearch(contentSections, search);
     }
   }, [contentSections, feature, search, inventoryFilter, machineFilter, ordersFilter, sitesFilter]);
+
+  const filteredPickupCandidates = useMemo<PickupOrderSearchItem[]>(() => {
+    const toLower = (v: string) => v.trim().toLowerCase();
+    const includes = (haystack: string, needle: string) =>
+      !needle.trim() || toLower(haystack).includes(toLower(needle));
+
+    const { customerName, salesRep, siteName, kind, type, constructionName, address } = pickupSearchForm;
+
+    return pickupOrderSearchMock.filter((x) => {
+      return (
+        includes(x.customerName, customerName) &&
+        includes(x.salesRep, salesRep) &&
+        includes(x.siteName, siteName) &&
+        includes(x.kind, kind) &&
+        includes(x.type, type) &&
+        includes(x.constructionName, constructionName) &&
+        includes(x.address, address)
+      );
+    });
+  }, [pickupSearchForm]);
+
+  const filteredPickupMachines = useMemo<PickupSearchMachineItem[]>(() => {
+    const toLower = (v: string) => v.trim().toLowerCase();
+    const includes = (haystack: string, needle: string) =>
+      !needle.trim() || toLower(haystack).includes(toLower(needle));
+
+    const { customerName, siteName, kind, type, constructionName, address } = pickupSearchForm;
+
+    return pickupSearchMachinesMock.filter((x) => {
+      return (
+        includes(x.customerName, customerName) &&
+        includes(x.siteName, siteName) &&
+        includes(x.kind, kind) &&
+        includes(x.type, type) &&
+        includes(x.constructionName, constructionName) &&
+        includes(x.address, address)
+      );
+    });
+  }, [pickupSearchForm]);
+
+  const pickupOutboundMachines = useMemo(
+    () => filteredPickupMachines.filter((x) => x.status === "出庫中"),
+    [filteredPickupMachines]
+  );
+  const pickupOrderedMachines = useMemo(
+    () => filteredPickupMachines.filter((x) => x.status === "受注中"),
+    [filteredPickupMachines]
+  );
+
+  const togglePickupMachine = (id: string) => {
+    setPickupMachineSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const buildOrderLinesFromSelectedMachines = (machines: PickupSearchMachineItem[]): OrderLine[] => {
+    return machines.map((m) => ({
+      ...createInitialOrderLine(),
+      productName1: m.machineName,
+      dispatchNote: `現場: ${m.siteName}`,
+      note1: `出庫開始日: ${m.outboundStartDate}`,
+      quantity: "1"
+    }));
+  };
 
   if (!feature) {
     return (
@@ -263,6 +415,28 @@ const FeaturePlaceholder = () => {
       </div>
     </div>
   ));
+
+  const shouldShowInboundOrdersPdfResult =
+    feature.key === "orders" && ordersFilter.kinds.length === 1 && ordersFilter.kinds[0] === "搬入";
+
+  const ordersSearchResultBody = shouldShowInboundOrdersPdfResult ? (
+    <div className="page" style={{ marginTop: 0 }}>
+      <p style={{ marginTop: 0, color: "#475569", fontSize: 12 }}>
+        検索条件「搬入」選択時のデモ表示（PDF/画像の表を再現）
+      </p>
+      <InboundPdfTable
+        ariaLabel="搬入 受注検索結果（PDF再現）"
+        columns={inboundOrderSearchColumns}
+        rows={inboundOrderSearchRawRows}
+        colWidths={inboundOrderSearchColWidths}
+        mergeColumnIndices={[0, 1, 5, 6, 7, 8, 9, 10, 12, 13]}
+        mergeBlankCellsWithinGroup
+        groupStartColumnIndices={[0, 1]}
+      />
+    </div>
+  ) : (
+    sectionsContent
+  );
 
   return (
     <div className="app-shell">
@@ -526,7 +700,7 @@ const FeaturePlaceholder = () => {
                   fontSize: 16
                 }}
                 onClick={() => {
-                  setShowOrdersModal(false);
+                  setShowOrdersResults(false);
                   setOrderCreateType("搬入");
                 }}
               >
@@ -548,8 +722,11 @@ const FeaturePlaceholder = () => {
                   fontSize: 16
                 }}
                 onClick={() => {
-                  setShowOrdersModal(false);
-                  setOrderCreateType("引取");
+                  setShowOrdersResults(false);
+                  setOrderCreateType(null);
+                  setShowPickupSearchModal(true);
+                  setPickupSearchShowResults(false);
+                  setPickupMachineSelectedIds([]);
                 }}
               >
                 {"引取\n受注作成"}
@@ -570,7 +747,7 @@ const FeaturePlaceholder = () => {
                   fontSize: 16
                 }}
                 onClick={() => {
-                  setShowOrdersModal(false);
+                  setShowOrdersResults(false);
                   setOrderCreateType("移動");
                 }}
               >
@@ -666,14 +843,17 @@ const FeaturePlaceholder = () => {
               <button
                 className="button primary"
                 type="button"
-                onClick={() => setShowOrdersModal(true)}
+                onClick={() => setShowOrdersResults(true)}
               >
                 検索
               </button>
               <button
                 className="button"
                 type="button"
-                onClick={() => setOrdersFilter({ ...initialOrdersFilter })}
+                onClick={() => {
+                  setOrdersFilter({ ...initialOrdersFilter });
+                  setShowOrdersResults(false);
+                }}
               >
                 クリア
               </button>
@@ -686,33 +866,26 @@ const FeaturePlaceholder = () => {
             編集などの画面を追加してください。
           </p>
         )}
-        {feature.key === "orders" && !showOrdersModal && (
+        {feature.key === "orders" && !showOrdersResults && (
           <p style={{ marginTop: 18, color: "#475569" }}>
-            検索条件を入力し「検索」を押すと一覧モーダルが表示されます。
+            検索条件を入力し「検索」を押すと、この下に検索結果が表示されます。
           </p>
         )}
         {feature.key !== "orders" && sectionsContent}
-        {feature.key === "orders" && showOrdersModal && (
-          <div className="modal-overlay" role="dialog" aria-modal="true">
-            <div className="modal">
-              <div className="modal-header">
-                <h3 style={{ margin: 0 }}>受注検索結果</h3>
-                <button className="button ghost" type="button" onClick={() => setShowOrdersModal(false)}>
-                  閉じる
-                </button>
-              </div>
-              <div className="modal-body">{sectionsContent}</div>
-              <div className="modal-footer">
-                <button className="button" type="button" onClick={() => setShowOrdersModal(false)}>
-                  閉じる
-                </button>
-              </div>
+        {feature.key === "orders" && showOrdersResults && (
+          <div className="page orders-results-fullbleed" style={{ marginTop: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <h3 style={{ marginTop: 0, marginBottom: 0 }}>受注検索結果</h3>
+              <button className="button" type="button" onClick={() => setShowOrdersResults(false)}>
+                閉じる
+              </button>
             </div>
+            {ordersSearchResultBody}
           </div>
         )}
         {feature.key === "orders" && orderCreateType && (
-          <div className="modal-overlay" role="dialog" aria-modal="true">
-            <div className="modal">
+          <div className="modal-overlay order-create-overlay" role="dialog" aria-modal="true">
+            <div className="modal order-create-modal">
               <div className="modal-header">
                 <h3 style={{ margin: 0 }}>{orderCreateType}受注作成（デモ）</h3>
                 <button className="button ghost" type="button" onClick={() => setOrderCreateType(null)}>
@@ -720,10 +893,329 @@ const FeaturePlaceholder = () => {
                 </button>
               </div>
               <div className="modal-body">
-                <p style={{ marginTop: 0, color: "#475569" }}>
+                <p style={{ marginTop: 0, marginBottom: 8, color: "#475569", fontSize: 12, lineHeight: 1.35 }}>
                   入力内容は保存されません。画面イメージのみのダミーモーダルです。
                 </p>
-                <div className="order-demo-form" style={{ marginTop: 12 }}>
+
+                <div className="order-lines">
+                  <div className="order-lines-header">
+                    <div style={{ fontWeight: 800, color: "#334155" }}>商品明細</div>
+                    <button
+                      className="button"
+                      type="button"
+                      onClick={() => setOrderLines((s) => [...s, createInitialOrderLine()])}
+                    >
+                      商品追加
+                    </button>
+                  </div>
+
+                  {orderLines.length > 0 && (
+                    <div className="order-lines-table-wrap" aria-label="商品明細入力">
+                      <table className="order-lines-table">
+                        <thead>
+                          <tr>
+                            <th>
+                              <div className="order-lines-th-2rows">
+                                <div>明細</div>
+                                <div>詳細</div>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="order-lines-th-2rows">
+                                <div>仕入先ID</div>
+                                <div>保管（倉庫ID）</div>
+                              </div>
+                            </th>
+                            <th>商品No.</th>
+                            <th>
+                              <div className="order-lines-th-2rows">
+                                <div>品名①</div>
+                                <div>品名②</div>
+                              </div>
+                            </th>
+                            <th>品名③</th>
+                            <th>配車備考</th>
+                            <th>備考①</th>
+                            <th>備考②</th>
+                            <th>数量</th>
+                            <th>開始日</th>
+                            <th>終了日</th>
+                            <th>契約</th>
+                            <th>日極単価</th>
+                            <th>月極単価</th>
+                            <th>分割</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {orderLines.map((line) => (
+                            <tr key={line.lineId}>
+                              <td>
+                                <div className="order-lines-2rows">
+                                  <select
+                                    className="order-lines-input"
+                                    value={line.meisai}
+                                    onChange={(e) =>
+                                      setOrderLines((s) =>
+                                        s.map((x) =>
+                                          x.lineId === line.lineId
+                                            ? { ...x, meisai: e.target.value as OrderLine["meisai"] }
+                                            : x
+                                        )
+                                      )
+                                    }
+                                  >
+                                    <option value="販売">販売</option>
+                                    <option value="レンタル">レンタル</option>
+                                  </select>
+                                  <select
+                                    className="order-lines-input"
+                                    value={line.shosai}
+                                    onChange={(e) =>
+                                      setOrderLines((s) =>
+                                        s.map((x) =>
+                                          x.lineId === line.lineId
+                                            ? { ...x, shosai: e.target.value as OrderLine["shosai"] }
+                                            : x
+                                        )
+                                      )
+                                    }
+                                  >
+                                    <option value="自社">自社</option>
+                                    <option value="他社">他社</option>
+                                  </select>
+                                </div>
+                              </td>
+                              <td>
+                                <div className="order-lines-2rows">
+                                  <input
+                                    className="order-lines-input"
+                                    value={line.supplierId}
+                                    onChange={(e) =>
+                                      setOrderLines((s) =>
+                                        s.map((x) =>
+                                          x.lineId === line.lineId ? { ...x, supplierId: e.target.value } : x
+                                        )
+                                      )
+                                    }
+                                  />
+                                  <input
+                                    className="order-lines-input"
+                                    value={line.warehouseId}
+                                    onChange={(e) =>
+                                      setOrderLines((s) =>
+                                        s.map((x) =>
+                                          x.lineId === line.lineId ? { ...x, warehouseId: e.target.value } : x
+                                        )
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  value={line.productNo}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) =>
+                                        x.lineId === line.lineId ? { ...x, productNo: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <div className="order-lines-2rows">
+                                  <input
+                                    className="order-lines-input"
+                                    value={line.productName1}
+                                    onChange={(e) =>
+                                      setOrderLines((s) =>
+                                        s.map((x) =>
+                                          x.lineId === line.lineId ? { ...x, productName1: e.target.value } : x
+                                        )
+                                      )
+                                    }
+                                  />
+                                  <input
+                                    className="order-lines-input"
+                                    value={line.productName2}
+                                    onChange={(e) =>
+                                      setOrderLines((s) =>
+                                        s.map((x) =>
+                                          x.lineId === line.lineId ? { ...x, productName2: e.target.value } : x
+                                        )
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  value={line.productName3}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) =>
+                                        x.lineId === line.lineId ? { ...x, productName3: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  value={line.dispatchNote}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) =>
+                                        x.lineId === line.lineId ? { ...x, dispatchNote: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  value={line.note1}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) => (x.lineId === line.lineId ? { ...x, note1: e.target.value } : x))
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  value={line.note2}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) => (x.lineId === line.lineId ? { ...x, note2: e.target.value } : x))
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  inputMode="numeric"
+                                  value={line.quantity}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) =>
+                                        x.lineId === line.lineId ? { ...x, quantity: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  type="date"
+                                  value={line.startDate}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) =>
+                                        x.lineId === line.lineId ? { ...x, startDate: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  type="date"
+                                  value={line.endDate}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) =>
+                                        x.lineId === line.lineId ? { ...x, endDate: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  value={line.contract}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) =>
+                                        x.lineId === line.lineId ? { ...x, contract: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  inputMode="numeric"
+                                  value={line.dailyUnitPrice}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) =>
+                                        x.lineId === line.lineId ? { ...x, dailyUnitPrice: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  inputMode="numeric"
+                                  value={line.monthlyUnitPrice}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) =>
+                                        x.lineId === line.lineId ? { ...x, monthlyUnitPrice: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="order-lines-input"
+                                  inputMode="numeric"
+                                  value={line.split}
+                                  onChange={(e) =>
+                                    setOrderLines((s) =>
+                                      s.map((x) =>
+                                        x.lineId === line.lineId ? { ...x, split: e.target.value } : x
+                                      )
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <button
+                                  className="button ghost"
+                                  type="button"
+                                  aria-label="行を削除"
+                                  onClick={() => setOrderLines((s) => s.filter((x) => x.lineId !== line.lineId))}
+                                  style={{ padding: "4px 8px", borderRadius: 8 }}
+                                >
+                                  ×
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div className="order-demo-form" style={{ marginTop: 8 }}>
                   <div className="order-demo-row cols-4">
                     <div className="order-demo-cell">
                       <div className="order-demo-label">搬入日</div>
@@ -924,8 +1416,12 @@ const FeaturePlaceholder = () => {
                           onChange={(e) => setOrderDemo((s) => ({ ...s, siteContact: e.target.value }))}
                           placeholder="例) 090-xxxx-xxxx / 担当: △△"
                         />
-                        <button className="button" type="button" disabled>
-                          商品追加（ダミー）
+                        <button
+                          className="button"
+                          type="button"
+                          onClick={() => setOrderLines((s) => [...s, createInitialOrderLine()])}
+                        >
+                          商品追加
                         </button>
                       </div>
                     </div>
@@ -1005,6 +1501,259 @@ const FeaturePlaceholder = () => {
                 </button>
                 <button className="button primary" type="button" disabled>
                   保存（ダミー）
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {feature.key === "orders" && showPickupSearchModal && (
+          <div className="modal-overlay" role="dialog" aria-modal="true">
+            <div className="modal">
+              <div className="modal-header">
+                <h3 style={{ margin: 0 }}>
+                  引取受注作成：{pickupSearchShowResults ? "検索結果" : "検索条件"}（デモ）
+                </h3>
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => {
+                    setShowPickupSearchModal(false);
+                    setPickupSearchShowResults(false);
+                    setPickupMachineSelectedIds([]);
+                  }}
+                >
+                  閉じる
+                </button>
+              </div>
+              <div className="modal-body">
+                {!pickupSearchShowResults && (
+                  <>
+                    <p style={{ marginTop: 0, marginBottom: 8, color: "#475569", fontSize: 12, lineHeight: 1.35 }}>
+                      検索条件を入力し「検索」を押すと、検索結果画面（左右分割）が表示されます（実データ連携は未実装）。
+                    </p>
+                    <div className="filter-bar multi" style={{ marginTop: 0 }}>
+                      <div className="filter-group">
+                        <label>得意先名</label>
+                        <input
+                          className="filter-input"
+                          placeholder="例) ABC建設"
+                          value={pickupSearchForm.customerName}
+                          onChange={(e) => setPickupSearchForm((s) => ({ ...s, customerName: e.target.value }))}
+                        />
+                      </div>
+                      <div className="filter-group">
+                        <label>現場</label>
+                        <input
+                          className="filter-input"
+                          placeholder="例) 高速道路改修A"
+                          value={pickupSearchForm.siteName}
+                          onChange={(e) => setPickupSearchForm((s) => ({ ...s, siteName: e.target.value }))}
+                        />
+                      </div>
+                      <div className="filter-group">
+                        <label>種類</label>
+                        <input
+                          className="filter-input"
+                          placeholder="例) 建機"
+                          value={pickupSearchForm.kind}
+                          onChange={(e) => setPickupSearchForm((s) => ({ ...s, kind: e.target.value }))}
+                        />
+                      </div>
+                      <div className="filter-group">
+                        <label>種別</label>
+                        <input
+                          className="filter-input"
+                          placeholder="例) 油圧ショベル"
+                          value={pickupSearchForm.type}
+                          onChange={(e) => setPickupSearchForm((s) => ({ ...s, type: e.target.value }))}
+                        />
+                      </div>
+                      <div className="filter-group">
+                        <label>工事名</label>
+                        <input
+                          className="filter-input"
+                          placeholder="例) ○○工事"
+                          value={pickupSearchForm.constructionName}
+                          onChange={(e) => setPickupSearchForm((s) => ({ ...s, constructionName: e.target.value }))}
+                        />
+                      </div>
+                      <div className="filter-group">
+                        <label>住所</label>
+                        <input
+                          className="filter-input"
+                          placeholder="例) 東京都○○"
+                          value={pickupSearchForm.address}
+                          onChange={(e) => setPickupSearchForm((s) => ({ ...s, address: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                      <button
+                        className="button primary"
+                        type="button"
+                        onClick={() => {
+                          setPickupSearchShowResults(true);
+                          setPickupMachineSelectedIds([]);
+                        }}
+                      >
+                        検索
+                      </button>
+                      <button
+                        className="button"
+                        type="button"
+                        onClick={() => {
+                          setPickupSearchForm({ ...initialPickupOrderSearchForm });
+                          setPickupSearchShowResults(false);
+                          setPickupMachineSelectedIds([]);
+                        }}
+                      >
+                        クリア
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {pickupSearchShowResults && (
+                  <div className="pickup-results-root" style={{ marginTop: 4 }}>
+                    <div className="pickup-results-toolbar">
+                      <div style={{ color: "#64748b", fontSize: 12 }}>
+                        対象 {filteredPickupMachines.length}件 / 選択 {pickupMachineSelectedIds.length}件
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button className="button" type="button" onClick={() => setPickupSearchShowResults(false)}>
+                          条件に戻る
+                        </button>
+                        <button
+                          className="button primary"
+                          type="button"
+                          disabled={pickupMachineSelectedIds.length === 0}
+                          onClick={() => {
+                            const selected = filteredPickupMachines.filter((x) =>
+                              pickupMachineSelectedIds.includes(x.id)
+                            );
+                            const first = selected[0];
+                            setPendingPickupCreate({
+                              orderDemoPatch: {
+                                orderTaker: first?.salesRep ?? "",
+                                customer: first?.customerName ?? "",
+                                siteName: first?.siteName ?? "",
+                                siteAddress: first?.address ?? "",
+                                constructionName: first?.constructionName ?? ""
+                              },
+                              orderLines: buildOrderLinesFromSelectedMachines(selected)
+                            });
+                            setShowPickupSearchModal(false);
+                            setPickupSearchShowResults(false);
+                            setPickupMachineSelectedIds([]);
+                            setOrderCreateType("引取");
+                          }}
+                        >
+                          引取受注作成
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="pickup-results-split" aria-label="検索結果（左右分割）">
+                      <div className="pickup-results-panel">
+                        <div className="pickup-results-title">出庫中の機械</div>
+                        <div className="table-container">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>機械</th>
+                                <th>現場</th>
+                                <th>出庫開始日</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pickupOutboundMachines.length === 0 && (
+                                <tr>
+                                  <td colSpan={3} style={{ color: "#64748b" }}>
+                                    該当なし
+                                  </td>
+                                </tr>
+                              )}
+                              {pickupOutboundMachines.map((m) => {
+                                const checked = pickupMachineSelectedIds.includes(m.id);
+                                return (
+                                  <tr key={m.id}>
+                                    <td>
+                                      <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => togglePickupMachine(m.id)}
+                                        />
+                                        <span style={{ fontWeight: 700 }}>{m.machineName}</span>
+                                      </label>
+                                    </td>
+                                    <td>{m.siteName}</td>
+                                    <td>{m.outboundStartDate}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="pickup-results-panel">
+                        <div className="pickup-results-title">受注中の機械</div>
+                        <div className="table-container">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>機械</th>
+                                <th>現場</th>
+                                <th>出庫開始日</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pickupOrderedMachines.length === 0 && (
+                                <tr>
+                                  <td colSpan={3} style={{ color: "#64748b" }}>
+                                    該当なし
+                                  </td>
+                                </tr>
+                              )}
+                              {pickupOrderedMachines.map((m) => {
+                                const checked = pickupMachineSelectedIds.includes(m.id);
+                                return (
+                                  <tr key={m.id}>
+                                    <td>
+                                      <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => togglePickupMachine(m.id)}
+                                        />
+                                        <span style={{ fontWeight: 700 }}>{m.machineName}</span>
+                                      </label>
+                                    </td>
+                                    <td>{m.siteName}</td>
+                                    <td>{m.outboundStartDate}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => {
+                    setShowPickupSearchModal(false);
+                    setPickupSearchShowResults(false);
+                    setPickupMachineSelectedIds([]);
+                  }}
+                >
+                  閉じる
                 </button>
               </div>
             </div>
