@@ -6,7 +6,7 @@ export const inboundOrderSearchColumns: string[] = [
   "No.",
   "数量",
   "車輛",
-  "R有",
+  "ﾚｯｶｰ",
   "運転手",
   "会社名",
   "現場",

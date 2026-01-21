@@ -12,6 +12,7 @@ type Props = {
   /** optional column widths (CSS width values), same length as columns */
   colWidths?: Array<string | undefined>;
   ariaLabel?: string;
+  onCellDoubleClick?: (args: { rowIndex: number; colIndex: number; value: string }) => void;
 };
 
 type SpanMap = number[][];
@@ -25,7 +26,8 @@ export const InboundPdfTable: React.FC<Props> = ({
   mergeBlankCellsWithinGroup = false,
   groupStartColumnIndices = [0, 1],
   colWidths,
-  ariaLabel
+  ariaLabel,
+  onCellDoubleClick
 }) => {
   const normalizedRows = useMemo(() => {
     return rows.map((r) => {
@@ -116,7 +118,12 @@ export const InboundPdfTable: React.FC<Props> = ({
                 const span = spans[rIdx]?.[cIdx] ?? 1;
                 if (mergeColumnIndices.includes(cIdx) && span === 0) return null;
                 return (
-                  <td key={`td-${rIdx}-${cIdx}`} data-col={cIdx} rowSpan={span > 1 ? span : undefined}>
+                  <td
+                    key={`td-${rIdx}-${cIdx}`}
+                    data-col={cIdx}
+                    rowSpan={span > 1 ? span : undefined}
+                    onDoubleClick={() => onCellDoubleClick?.({ rowIndex: rIdx, colIndex: cIdx, value: row[cIdx] })}
+                  >
                     {row[cIdx]}
                   </td>
                 );

@@ -11,6 +11,25 @@ import {
   inboundOrderSearchColWidths
 } from "../data/inboundOrderSearchMock";
 import { InboundPdfTable } from "../components/InboundPdfTable";
+import { LocationChangeModal } from "../components/LocationChangeModal";
+import { locationMasterMock } from "../data/locationMasterMock";
+import { MachineTypeChangeModal } from "../components/MachineTypeChangeModal";
+import { MachineNoEditModal } from "../components/MachineNoEditModal";
+import { SimpleValueEditModal } from "../components/SimpleValueEditModal";
+import { DriverAssignModal, driverAssignParseFromCell } from "../components/DriverAssignModal";
+import { SiteEditModal } from "../components/SiteEditModal";
+import { TimeRangeEditModal } from "../components/TimeRangeEditModal";
+import { FactoryNoteEditModal } from "../components/FactoryNoteEditModal";
+import { TransportFeeEditModal } from "../components/TransportFeeEditModal";
+import { VehicleSizeEditModal } from "../components/VehicleSizeEditModal";
+import {
+  categoryIdOptions,
+  kindIdOptions,
+  machineNoOptions,
+  vehicleSizeOptions,
+  wreckerOptions
+} from "../data/inboundEditMock";
+import { siteMasterMock } from "../data/siteMasterMock";
 import { Department } from "../types";
 import { useAuth, getDepartmentPermissions } from "../auth/AuthContext";
 import {
@@ -127,6 +146,86 @@ const FeaturePlaceholder = () => {
     orderDemoPatch: Partial<OrderDemoForm>;
     orderLines: OrderLine[];
   } | null>(null);
+
+  // 搬入の受注検索結果（PDF再現テーブル）: デモ用に行データをstateで持ち、場所変更を反映できるようにする
+  const [inboundRows, setInboundRows] = useState<string[][]>(() => inboundOrderSearchRawRows.map((r) => [...r]));
+  const [locationModalOpen, setLocationModalOpen] = useState(false);
+  const [locationModalTargetRow, setLocationModalTargetRow] = useState<number | null>(null);
+  const [locationModalInitial, setLocationModalInitial] = useState<{ id?: string; name?: string }>({});
+
+  const parseLocationCell = (value: string): { id?: string; name?: string } => {
+    const v = value.trim();
+    // 例: "本社（001）"
+    const m = v.match(/^(.+?)（(\d+)）$/);
+    if (m) return { name: m[1], id: m[2] };
+    return { name: v || undefined };
+  };
+
+  const [machineTypeModalOpen, setMachineTypeModalOpen] = useState(false);
+  const [machineTypeTargetRow, setMachineTypeTargetRow] = useState<number | null>(null);
+  const [machineTypeInitial, setMachineTypeInitial] = useState<{ kindId?: string; categoryId?: string }>({});
+
+  const [machineNoModalOpen, setMachineNoModalOpen] = useState(false);
+  const [machineNoTargetRow, setMachineNoTargetRow] = useState<number | null>(null);
+  const [machineNoInitial, setMachineNoInitial] = useState<string>("");
+
+  const [quantityModalOpen, setQuantityModalOpen] = useState(false);
+  const [quantityTargetRow, setQuantityTargetRow] = useState<number | null>(null);
+  const [quantityInitial, setQuantityInitial] = useState<string>("");
+
+  const [vehicleModalOpen, setVehicleModalOpen] = useState(false);
+  const [vehicleTargetRow, setVehicleTargetRow] = useState<number | null>(null);
+  const [vehicleInitial, setVehicleInitial] = useState<string>("");
+
+  const [wreckerModalOpen, setWreckerModalOpen] = useState(false);
+  const [wreckerTargetRow, setWreckerTargetRow] = useState<number | null>(null);
+  const [wreckerInitial, setWreckerInitial] = useState<string>("");
+
+  const [driverModalOpen, setDriverModalOpen] = useState(false);
+  const [driverTargetRow, setDriverTargetRow] = useState<number | null>(null);
+  const [driverInitial, setDriverInitial] = useState<{ kind?: "選択無し" | "自社" | "外注" | "先方"; driverId?: string; outsourceId?: string }>({});
+
+  const [siteModalOpen, setSiteModalOpen] = useState(false);
+  const [siteTargetRow, setSiteTargetRow] = useState<number | null>(null);
+  const [siteInitial, setSiteInitial] = useState<{ siteId?: string; siteName?: string }>({});
+
+  const [timeModalOpen, setTimeModalOpen] = useState(false);
+  const [timeTargetRow, setTimeTargetRow] = useState<number | null>(null);
+  const [timeInitial, setTimeInitial] = useState<string>("");
+
+  const [factoryNoteModalOpen, setFactoryNoteModalOpen] = useState(false);
+  const [factoryNoteTargetRow, setFactoryNoteTargetRow] = useState<number | null>(null);
+  const [factoryNoteInitial, setFactoryNoteInitial] = useState<string>("");
+
+  const [transportFeeModalOpen, setTransportFeeModalOpen] = useState(false);
+  const [transportFeeTargetRow, setTransportFeeTargetRow] = useState<number | null>(null);
+  const [transportFeeInitial, setTransportFeeInitial] = useState<string>("");
+
+  const setInboundCell = (rowIndex: number, colIndex: number, nextValue: string) => {
+    setInboundRows((prev) =>
+      prev.map((row, idx) =>
+        idx === rowIndex ? row.map((cell, cidx) => (cidx === colIndex ? nextValue : cell)) : row
+      )
+    );
+  };
+
+  const parseMachineTypeFromCell = (value: string): { baseName: string; kindId?: string; categoryId?: string } => {
+    const lines = (value ?? "").split("\n");
+    const baseName = (lines[0] ?? "").trim();
+    const kindLine = lines.find((x) => x.trim().startsWith("種類ID:"));
+    const categoryLine = lines.find((x) => x.trim().startsWith("種別ID:"));
+    const kindId = kindLine ? kindLine.replace("種類ID:", "").trim() : undefined;
+    const categoryId = categoryLine ? categoryLine.replace("種別ID:", "").trim() : undefined;
+    return { baseName, kindId, categoryId };
+  };
+
+  const parseSiteFromCell = (value: string): { siteId?: string; siteName?: string } => {
+    const v = (value ?? "").trim();
+    // 例: "港北区東神奈川（S-0004）"
+    const m = v.match(/^(.+?)（(.+?)）$/);
+    if (m) return { siteName: m[1], siteId: m[2] };
+    return { siteName: v || undefined };
+  };
 
   type OrderDemoForm = {
     inboundDate: string;
@@ -422,16 +521,96 @@ const FeaturePlaceholder = () => {
   const ordersSearchResultBody = shouldShowInboundOrdersPdfResult ? (
     <div className="page" style={{ marginTop: 0 }}>
       <p style={{ marginTop: 0, color: "#475569", fontSize: 12 }}>
-        検索条件「搬入」選択時のデモ表示（PDF/画像の表を再現）
+        検索条件「搬入」選択時のデモ表示（PDF/画像の表を再現）※場所セルをダブルクリックで場所変更モーダル
       </p>
       <InboundPdfTable
         ariaLabel="搬入 受注検索結果（PDF再現）"
         columns={inboundOrderSearchColumns}
-        rows={inboundOrderSearchRawRows}
+        rows={inboundRows}
         colWidths={inboundOrderSearchColWidths}
         mergeColumnIndices={[0, 1, 5, 6, 7, 8, 9, 10, 12, 13]}
         mergeBlankCellsWithinGroup
         groupStartColumnIndices={[0, 1]}
+        onCellDoubleClick={({ rowIndex, colIndex, value }) => {
+          // 列ごとにデモ編集モーダルを出し分け
+          // [0]場所 [2]機械名 [3]No. [4]数量 [5]車輛
+          if (colIndex === 0) {
+            if (!value.trim()) return;
+            setLocationModalTargetRow(rowIndex);
+            setLocationModalInitial(parseLocationCell(value));
+            setLocationModalOpen(true);
+            return;
+          }
+          if (colIndex === 2) {
+            const parsed = parseMachineTypeFromCell(value);
+            setMachineTypeTargetRow(rowIndex);
+            setMachineTypeInitial({ kindId: parsed.kindId, categoryId: parsed.categoryId });
+            setMachineTypeModalOpen(true);
+            return;
+          }
+          if (colIndex === 3) {
+            setMachineNoTargetRow(rowIndex);
+            setMachineNoInitial(value ?? "");
+            setMachineNoModalOpen(true);
+            return;
+          }
+          if (colIndex === 4) {
+            setQuantityTargetRow(rowIndex);
+            setQuantityInitial(value ?? "");
+            setQuantityModalOpen(true);
+            return;
+          }
+          if (colIndex === 5) {
+            setVehicleTargetRow(rowIndex);
+            setVehicleInitial(value ?? "");
+            setVehicleModalOpen(true);
+            return;
+          }
+          if (colIndex === 6) {
+            // ﾚｯｶｰ
+            setWreckerTargetRow(rowIndex);
+            setWreckerInitial(value ?? "");
+            setWreckerModalOpen(true);
+            return;
+          }
+          if (colIndex === 7) {
+            // 運転手
+            const parsed = driverAssignParseFromCell(value ?? "");
+            setDriverTargetRow(rowIndex);
+            setDriverInitial(parsed);
+            setDriverModalOpen(true);
+            return;
+          }
+          if (colIndex === 9) {
+            // 現場
+            const parsed = parseSiteFromCell(value ?? "");
+            setSiteTargetRow(rowIndex);
+            setSiteInitial(parsed);
+            setSiteModalOpen(true);
+            return;
+          }
+          if (colIndex === 10) {
+            // 時間
+            setTimeTargetRow(rowIndex);
+            setTimeInitial(value ?? "");
+            setTimeModalOpen(true);
+            return;
+          }
+          if (colIndex === 11) {
+            // 備考（工場備考）
+            setFactoryNoteTargetRow(rowIndex);
+            setFactoryNoteInitial(value ?? "");
+            setFactoryNoteModalOpen(true);
+            return;
+          }
+          if (colIndex === 13) {
+            // 回送費
+            setTransportFeeTargetRow(rowIndex);
+            setTransportFeeInitial(value ?? "");
+            setTransportFeeModalOpen(true);
+            return;
+          }
+        }}
       />
     </div>
   ) : (
@@ -882,6 +1061,238 @@ const FeaturePlaceholder = () => {
             </div>
             {ordersSearchResultBody}
           </div>
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <LocationChangeModal
+            open={locationModalOpen}
+            locations={locationMasterMock}
+            initialLocationId={locationModalInitial.id}
+            initialLocationName={locationModalInitial.name}
+            onClose={() => {
+              setLocationModalOpen(false);
+              setLocationModalTargetRow(null);
+              setLocationModalInitial({});
+            }}
+            onConfirm={(next) => {
+              if (locationModalTargetRow == null) return;
+              setInboundCell(locationModalTargetRow, 0, `${next.name}（${next.id}）`);
+              setLocationModalOpen(false);
+              setLocationModalTargetRow(null);
+              setLocationModalInitial({});
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <MachineTypeChangeModal
+            open={machineTypeModalOpen}
+            kindIdOptions={kindIdOptions}
+            categoryIdOptions={categoryIdOptions}
+            initialKindId={machineTypeInitial.kindId}
+            initialCategoryId={machineTypeInitial.categoryId}
+            onClose={() => {
+              setMachineTypeModalOpen(false);
+              setMachineTypeTargetRow(null);
+              setMachineTypeInitial({});
+            }}
+            onConfirm={(next) => {
+              if (machineTypeTargetRow == null) return;
+              const current = inboundRows[machineTypeTargetRow]?.[2] ?? "";
+              const parsed = parseMachineTypeFromCell(current);
+              const base = parsed.baseName || current || "（未入力）";
+              setInboundCell(machineTypeTargetRow, 2, `${base}\n種類ID:${next.kindId}\n種別ID:${next.categoryId}`);
+              setMachineTypeModalOpen(false);
+              setMachineTypeTargetRow(null);
+              setMachineTypeInitial({});
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <MachineNoEditModal
+            open={machineNoModalOpen}
+            machineNoOptions={machineNoOptions}
+            initialValue={machineNoInitial}
+            onClose={() => {
+              setMachineNoModalOpen(false);
+              setMachineNoTargetRow(null);
+              setMachineNoInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              if (machineNoTargetRow == null) return;
+              setInboundCell(machineNoTargetRow, 3, nextValue);
+              setMachineNoModalOpen(false);
+              setMachineNoTargetRow(null);
+              setMachineNoInitial("");
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <SimpleValueEditModal
+            open={quantityModalOpen}
+            title="数量 変更（デモ）"
+            description="数量セルのダブルクリックで開くデモモーダルです。"
+            mode="number"
+            initialValue={quantityInitial}
+            placeholder="例) 1"
+            onClose={() => {
+              setQuantityModalOpen(false);
+              setQuantityTargetRow(null);
+              setQuantityInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              if (quantityTargetRow == null) return;
+              setInboundCell(quantityTargetRow, 4, nextValue);
+              setQuantityModalOpen(false);
+              setQuantityTargetRow(null);
+              setQuantityInitial("");
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <VehicleSizeEditModal
+            open={vehicleModalOpen}
+            vehicleSizeOptions={vehicleSizeOptions}
+            initialValue={vehicleInitial}
+            onClose={() => {
+              setVehicleModalOpen(false);
+              setVehicleTargetRow(null);
+              setVehicleInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              if (vehicleTargetRow == null) return;
+              setInboundCell(vehicleTargetRow, 5, nextValue);
+              setVehicleModalOpen(false);
+              setVehicleTargetRow(null);
+              setVehicleInitial("");
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <SimpleValueEditModal
+            open={wreckerModalOpen}
+            title="ﾚｯｶｰ 変更（デモ）"
+            description="ﾚｯｶｰセルのダブルクリックで開くデモモーダルです。"
+            mode="select"
+            options={wreckerOptions}
+            initialValue={wreckerInitial.trim() ? wreckerInitial : wreckerOptions[0]}
+            onClose={() => {
+              setWreckerModalOpen(false);
+              setWreckerTargetRow(null);
+              setWreckerInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              if (wreckerTargetRow == null) return;
+              // 「選択無し」は空欄にする
+              setInboundCell(wreckerTargetRow, 6, nextValue === "選択無し" ? "" : nextValue);
+              setWreckerModalOpen(false);
+              setWreckerTargetRow(null);
+              setWreckerInitial("");
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <DriverAssignModal
+            open={driverModalOpen}
+            initialKind={driverInitial.kind}
+            initialDriverId={driverInitial.driverId}
+            initialOutsourceId={driverInitial.outsourceId}
+            onClose={() => {
+              setDriverModalOpen(false);
+              setDriverTargetRow(null);
+              setDriverInitial({});
+            }}
+            onConfirm={(next) => {
+              if (driverTargetRow == null) return;
+              const lines: string[] = [];
+              if (next.kind === "選択無し") {
+                setInboundCell(driverTargetRow, 7, "");
+              } else if (next.kind === "先方") {
+                setInboundCell(driverTargetRow, 7, "先方");
+              } else {
+                lines.push(next.kind);
+                if (next.driverId) lines.push(`運転手ID:${next.driverId}`);
+                if (next.outsourceId) lines.push(`外注ID:${next.outsourceId}`);
+                setInboundCell(driverTargetRow, 7, lines.join("\n"));
+              }
+              setDriverModalOpen(false);
+              setDriverTargetRow(null);
+              setDriverInitial({});
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <SiteEditModal
+            open={siteModalOpen}
+            title="現場（デモ）"
+            sites={siteMasterMock}
+            initialSiteId={siteInitial.siteId}
+            initialSiteName={siteInitial.siteName}
+            onClose={() => {
+              setSiteModalOpen(false);
+              setSiteTargetRow(null);
+              setSiteInitial({});
+            }}
+            onConfirm={(next) => {
+              if (siteTargetRow == null) return;
+              setInboundCell(siteTargetRow, 9, `${next.siteName}（${next.siteId}）`);
+              setSiteModalOpen(false);
+              setSiteTargetRow(null);
+              setSiteInitial({});
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <TimeRangeEditModal
+            open={timeModalOpen}
+            initialValue={timeInitial}
+            onClose={() => {
+              setTimeModalOpen(false);
+              setTimeTargetRow(null);
+              setTimeInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              if (timeTargetRow == null) return;
+              setInboundCell(timeTargetRow, 10, nextValue);
+              setTimeModalOpen(false);
+              setTimeTargetRow(null);
+              setTimeInitial("");
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <FactoryNoteEditModal
+            open={factoryNoteModalOpen}
+            initialValue={factoryNoteInitial}
+            onClose={() => {
+              setFactoryNoteModalOpen(false);
+              setFactoryNoteTargetRow(null);
+              setFactoryNoteInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              if (factoryNoteTargetRow == null) return;
+              setInboundCell(factoryNoteTargetRow, 11, nextValue);
+              setFactoryNoteModalOpen(false);
+              setFactoryNoteTargetRow(null);
+              setFactoryNoteInitial("");
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+          <TransportFeeEditModal
+            open={transportFeeModalOpen}
+            initialValue={transportFeeInitial}
+            onClose={() => {
+              setTransportFeeModalOpen(false);
+              setTransportFeeTargetRow(null);
+              setTransportFeeInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              if (transportFeeTargetRow == null) return;
+              setInboundCell(transportFeeTargetRow, 13, nextValue);
+              setTransportFeeModalOpen(false);
+              setTransportFeeTargetRow(null);
+              setTransportFeeInitial("");
+            }}
+          />
         )}
         {feature.key === "orders" && orderCreateType && (
           <div className="modal-overlay order-create-overlay" role="dialog" aria-modal="true">
