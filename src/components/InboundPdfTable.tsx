@@ -5,6 +5,10 @@ type Props = {
   rows: string[][];
   /** columns that should be merged vertically when subsequent rows are blank */
   mergeColumnIndices: number[];
+  /** optional extra className added to the table element (e.g. to theme pickup vs inbound) */
+  tableClassName?: string;
+  /** optional row className, merged with group-start class */
+  getRowClassName?: (args: { rowIndex: number; row: string[] }) => string | undefined;
   /** if true, merge mergeColumnIndices within each group even when anchor cell is blank (spreadsheet-like merged blanks) */
   mergeBlankCellsWithinGroup?: boolean;
   /** columns that indicate the start of a new group (for thicker top border) */
@@ -23,6 +27,8 @@ export const InboundPdfTable: React.FC<Props> = ({
   columns,
   rows,
   mergeColumnIndices,
+  tableClassName,
+  getRowClassName,
   mergeBlankCellsWithinGroup = false,
   groupStartColumnIndices = [0, 1],
   colWidths,
@@ -96,7 +102,10 @@ export const InboundPdfTable: React.FC<Props> = ({
 
   return (
     <div className="table-container">
-      <table className="inbound-pdf-table" aria-label={ariaLabel}>
+      <table
+        className={["inbound-pdf-table", tableClassName].filter(Boolean).join(" ")}
+        aria-label={ariaLabel}
+      >
         <colgroup>
           {columns.map((_, idx) => (
             <col key={`col-${idx}`} style={colWidths?.[idx] ? { width: colWidths[idx] } : undefined} />
@@ -113,7 +122,15 @@ export const InboundPdfTable: React.FC<Props> = ({
         </thead>
         <tbody>
           {normalizedRows.map((row, rIdx) => (
-            <tr key={`r-${rIdx}`} className={isGroupStartRow(row) ? "inbound-pdf-row-start" : undefined}>
+            <tr
+              key={`r-${rIdx}`}
+              className={[
+                isGroupStartRow(row) ? "inbound-pdf-row-start" : "",
+                getRowClassName?.({ rowIndex: rIdx, row }) ?? ""
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined}
+            >
               {columns.map((_, cIdx) => {
                 const span = spans[rIdx]?.[cIdx] ?? 1;
                 if (mergeColumnIndices.includes(cIdx) && span === 0) return null;

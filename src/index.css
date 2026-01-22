@@ -458,6 +458,24 @@ table {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* 引取：薄いイエローで搬入と見分ける（文字は見えにくくしない） */
+.inbound-pdf-table.inbound-pdf-table--pickup th,
+.inbound-pdf-table.inbound-pdf-table--pickup td {
+  color: #0f172a; /* slate-900 相当で高コントラスト */
+}
+.inbound-pdf-table.inbound-pdf-table--pickup th {
+  background: #fef3c7; /* amber-100 */
+}
+.inbound-pdf-table.inbound-pdf-table--pickup td {
+  background: #fffbeb; /* amber-50 */
+}
+
+/* 搬入＋引取をミックス表示する場合：引取行だけ薄いイエロー */
+.inbound-pdf-table tr.orders-pdf-row--pickup td {
+  background: #fffbeb; /* amber-50 */
+  color: #0f172a; /* readable */
+}
 /* 文章が入るセルは折り返し許可（画像の「○都筑移動…」等） */
 .inbound-pdf-table td[data-col="2"],
 .inbound-pdf-table td[data-col="11"] {

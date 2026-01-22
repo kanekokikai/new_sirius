@@ -10,6 +10,7 @@ import {
   inboundOrderSearchRawRows,
   inboundOrderSearchColWidths
 } from "../data/inboundOrderSearchMock";
+import { pickupOrderSearchRawRows } from "../data/pickupOrderSearchPdfMock";
 import { InboundPdfTable } from "../components/InboundPdfTable";
 import { LocationChangeModal } from "../components/LocationChangeModal";
 import { locationMasterMock } from "../data/locationMasterMock";
@@ -149,6 +150,9 @@ const FeaturePlaceholder = () => {
 
   // 搬入の受注検索結果（PDF再現テーブル）: デモ用に行データをstateで持ち、場所変更を反映できるようにする
   const [inboundRows, setInboundRows] = useState<string[][]>(() => inboundOrderSearchRawRows.map((r) => [...r]));
+  // 引取の受注検索結果（PDF再現テーブル）: デモ用に行データをstateで持ち、編集を反映できるようにする
+  const [pickupRows, setPickupRows] = useState<string[][]>(() => pickupOrderSearchRawRows.map((r) => [...r]));
+  const [ordersPdfEditingKind, setOrdersPdfEditingKind] = useState<"搬入" | "引取">("搬入");
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [locationModalTargetRow, setLocationModalTargetRow] = useState<number | null>(null);
   const [locationModalInitial, setLocationModalInitial] = useState<{ id?: string; name?: string }>({});
@@ -207,6 +211,66 @@ const FeaturePlaceholder = () => {
         idx === rowIndex ? row.map((cell, cidx) => (cidx === colIndex ? nextValue : cell)) : row
       )
     );
+  };
+
+  const setPickupCell = (rowIndex: number, colIndex: number, nextValue: string) => {
+    setPickupRows((prev) =>
+      prev.map((row, idx) =>
+        idx === rowIndex ? row.map((cell, cidx) => (cidx === colIndex ? nextValue : cell)) : row
+      )
+    );
+  };
+
+  const setOrdersPdfCell = (rowIndex: number, colIndex: number, nextValue: string) => {
+    if (ordersPdfEditingKind === "引取") {
+      setPickupCell(rowIndex, colIndex, nextValue);
+      return;
+    }
+    setInboundCell(rowIndex, colIndex, nextValue);
+  };
+
+  const parseStartTimeMinutes = (value: string): number => {
+    const v = (value ?? "").trim();
+    // examples: "9:00", "09:00～12:00", "10:00～10:30"
+    const m = v.match(/(\d{1,2})\s*:\s*(\d{2})/);
+    if (!m) return Number.POSITIVE_INFINITY;
+    const hh = Number(m[1]);
+    const mm = Number(m[2]);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return Number.POSITIVE_INFINITY;
+    return hh * 60 + mm;
+  };
+
+  const isPdfGroupStartRow = (row: string[]) => (row[0] ?? "").trim().length > 0 || (row[1] ?? "").trim().length > 0;
+
+  type OrdersPdfRowRef = { kind: "搬入" | "引取"; sourceRowIndex: number };
+  type OrdersPdfGroup = { kind: "搬入" | "引取"; startRowIndex: number; endRowIndex: number; startMinutes: number };
+
+  const buildGroups = (rows: string[][], kind: "搬入" | "引取"): OrdersPdfGroup[] => {
+    const groups: OrdersPdfGroup[] = [];
+    let i = 0;
+    while (i < rows.length) {
+      // seek group start
+      while (i < rows.length && !isPdfGroupStartRow(rows[i] ?? [])) i += 1;
+      if (i >= rows.length) break;
+      const start = i;
+      i += 1;
+      while (i < rows.length && !isPdfGroupStartRow(rows[i] ?? [])) i += 1;
+      const end = i; // exclusive
+
+      const timeCell =
+        rows
+          .slice(start, end)
+          .map((r) => (r?.[10] ?? "").trim())
+          .find((x) => x.length > 0) ?? "";
+
+      groups.push({
+        kind,
+        startRowIndex: start,
+        endRowIndex: end,
+        startMinutes: parseStartTimeMinutes(timeCell)
+      });
+    }
+    return groups;
   };
 
   const parseMachineTypeFromCell = (value: string): { baseName: string; kindId?: string; categoryId?: string } => {
@@ -517,21 +581,100 @@ const FeaturePlaceholder = () => {
 
   const shouldShowInboundOrdersPdfResult =
     feature.key === "orders" && ordersFilter.kinds.length === 1 && ordersFilter.kinds[0] === "搬入";
+  const shouldShowPickupOrdersPdfResult =
+    feature.key === "orders" && ordersFilter.kinds.length === 1 && ordersFilter.kinds[0] === "引取";
+  const shouldShowOrdersPdfResult = shouldShowInboundOrdersPdfResult || shouldShowPickupOrdersPdfResult;
+  const ordersPdfKindLabel: "搬入" | "引取" = shouldShowInboundOrdersPdfResult ? "搬入" : "引取";
 
-  const ordersSearchResultBody = shouldShowInboundOrdersPdfResult ? (
+  const hasInboundPdf = feature.key === "orders" && ordersFilter.kinds.includes("搬入");
+  const hasPickupPdf = feature.key === "orders" && ordersFilter.kinds.includes("引取");
+  const onlyInboundPickupKinds =
+    feature.key === "orders" &&
+    ordersFilter.kinds.length > 0 &&
+    ordersFilter.kinds.every((k) => k === "搬入" || k === "引取");
+  const shouldShowMixedOrdersPdfResult = feature.key === "orders" && onlyInboundPickupKinds && hasInboundPdf && hasPickupPdf;
+
+  const shouldShowAnyOrdersPdfResult = shouldShowOrdersPdfResult || shouldShowMixedOrdersPdfResult;
+
+  const ordersPdfTitleLabel = shouldShowMixedOrdersPdfResult ? "搬入＋引取" : ordersPdfKindLabel;
+
+  const ordersPdfDisplay = useMemo((): { rows: string[][]; rowRefs: OrdersPdfRowRef[] } => {
+    if (!feature || feature.key !== "orders") return { rows: [], rowRefs: [] };
+
+    if (shouldShowMixedOrdersPdfResult) {
+      const inboundGroups = buildGroups(inboundRows, "搬入");
+      const pickupGroups = buildGroups(pickupRows, "引取");
+      const merged = [...inboundGroups, ...pickupGroups].sort((a, b) => {
+        if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
+        if (a.kind !== b.kind) return a.kind === "搬入" ? -1 : 1;
+        return a.startRowIndex - b.startRowIndex;
+      });
+
+      const nextRows: string[][] = [];
+      const nextRefs: OrdersPdfRowRef[] = [];
+      for (const g of merged) {
+        const src = g.kind === "搬入" ? inboundRows : pickupRows;
+        for (let r = g.startRowIndex; r < g.endRowIndex; r += 1) {
+          nextRows.push(src[r] ?? []);
+          nextRefs.push({ kind: g.kind, sourceRowIndex: r });
+        }
+      }
+      return { rows: nextRows, rowRefs: nextRefs };
+    }
+
+    if (shouldShowInboundOrdersPdfResult) {
+      return { rows: inboundRows, rowRefs: inboundRows.map((_, idx) => ({ kind: "搬入", sourceRowIndex: idx })) };
+    }
+    if (shouldShowPickupOrdersPdfResult) {
+      return { rows: pickupRows, rowRefs: pickupRows.map((_, idx) => ({ kind: "引取", sourceRowIndex: idx })) };
+    }
+    return { rows: [], rowRefs: [] };
+  }, [
+    buildGroups,
+    feature,
+    inboundRows,
+    pickupRows,
+    shouldShowInboundOrdersPdfResult,
+    shouldShowMixedOrdersPdfResult,
+    shouldShowPickupOrdersPdfResult
+  ]);
+
+  const setOrdersPdfCellByDisplayRow = (displayRowIndex: number, colIndex: number, nextValue: string) => {
+    const ref = ordersPdfDisplay.rowRefs[displayRowIndex];
+    if (!ref) return;
+    if (ref.kind === "引取") {
+      setPickupCell(ref.sourceRowIndex, colIndex, nextValue);
+      return;
+    }
+    setInboundCell(ref.sourceRowIndex, colIndex, nextValue);
+  };
+
+  const ordersSearchResultBody = shouldShowAnyOrdersPdfResult ? (
     <div className="page" style={{ marginTop: 0 }}>
       <p style={{ marginTop: 0, color: "#475569", fontSize: 12 }}>
-        検索条件「搬入」選択時のデモ表示（PDF/画像の表を再現）※場所セルをダブルクリックで場所変更モーダル
+        検索条件「{ordersPdfTitleLabel}」選択時のデモ表示（PDF/画像の表を再現）※場所セルをダブルクリックで場所変更モーダル
       </p>
       <InboundPdfTable
-        ariaLabel="搬入 受注検索結果（PDF再現）"
+        ariaLabel={`${ordersPdfTitleLabel} 受注検索結果（PDF再現）`}
         columns={inboundOrderSearchColumns}
-        rows={inboundRows}
+        rows={shouldShowMixedOrdersPdfResult ? ordersPdfDisplay.rows : (shouldShowInboundOrdersPdfResult ? inboundRows : pickupRows)}
+        tableClassName={shouldShowPickupOrdersPdfResult ? "inbound-pdf-table--pickup" : undefined}
+        getRowClassName={
+          shouldShowMixedOrdersPdfResult
+            ? ({ rowIndex }) => (ordersPdfDisplay.rowRefs[rowIndex]?.kind === "引取" ? "orders-pdf-row--pickup" : undefined)
+            : undefined
+        }
         colWidths={inboundOrderSearchColWidths}
-        mergeColumnIndices={[0, 1, 5, 6, 7, 8, 9, 10, 12, 13]}
+        mergeColumnIndices={[0, 1, 5, 6, 7, 8, 9, 10, 11, 12, 13]}
         mergeBlankCellsWithinGroup
         groupStartColumnIndices={[0, 1]}
         onCellDoubleClick={({ rowIndex, colIndex, value }) => {
+          if (shouldShowMixedOrdersPdfResult) {
+            const ref = ordersPdfDisplay.rowRefs[rowIndex];
+            setOrdersPdfEditingKind(ref?.kind ?? "搬入");
+          } else {
+            setOrdersPdfEditingKind(ordersPdfKindLabel);
+          }
           // 列ごとにデモ編集モーダルを出し分け
           // [0]場所 [2]機械名 [3]No. [4]数量 [5]車輛
           if (colIndex === 0) {
@@ -1062,7 +1205,7 @@ const FeaturePlaceholder = () => {
             {ordersSearchResultBody}
           </div>
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <LocationChangeModal
             open={locationModalOpen}
             locations={locationMasterMock}
@@ -1075,14 +1218,14 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(next) => {
               if (locationModalTargetRow == null) return;
-              setInboundCell(locationModalTargetRow, 0, `${next.name}（${next.id}）`);
+              setOrdersPdfCellByDisplayRow(locationModalTargetRow, 0, `${next.name}（${next.id}）`);
               setLocationModalOpen(false);
               setLocationModalTargetRow(null);
               setLocationModalInitial({});
             }}
           />
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <MachineTypeChangeModal
             open={machineTypeModalOpen}
             kindIdOptions={kindIdOptions}
@@ -1096,17 +1239,21 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(next) => {
               if (machineTypeTargetRow == null) return;
-              const current = inboundRows[machineTypeTargetRow]?.[2] ?? "";
+              const ref = ordersPdfDisplay.rowRefs[machineTypeTargetRow];
+              const current =
+                ref?.kind === "引取"
+                  ? pickupRows[ref.sourceRowIndex]?.[2] ?? ""
+                  : inboundRows[ref?.sourceRowIndex ?? machineTypeTargetRow]?.[2] ?? "";
               const parsed = parseMachineTypeFromCell(current);
               const base = parsed.baseName || current || "（未入力）";
-              setInboundCell(machineTypeTargetRow, 2, `${base}\n種類ID:${next.kindId}\n種別ID:${next.categoryId}`);
+              setOrdersPdfCellByDisplayRow(machineTypeTargetRow, 2, `${base}\n種類ID:${next.kindId}\n種別ID:${next.categoryId}`);
               setMachineTypeModalOpen(false);
               setMachineTypeTargetRow(null);
               setMachineTypeInitial({});
             }}
           />
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <MachineNoEditModal
             open={machineNoModalOpen}
             machineNoOptions={machineNoOptions}
@@ -1118,14 +1265,14 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (machineNoTargetRow == null) return;
-              setInboundCell(machineNoTargetRow, 3, nextValue);
+              setOrdersPdfCellByDisplayRow(machineNoTargetRow, 3, nextValue);
               setMachineNoModalOpen(false);
               setMachineNoTargetRow(null);
               setMachineNoInitial("");
             }}
           />
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <SimpleValueEditModal
             open={quantityModalOpen}
             title="数量 変更（デモ）"
@@ -1140,14 +1287,14 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (quantityTargetRow == null) return;
-              setInboundCell(quantityTargetRow, 4, nextValue);
+              setOrdersPdfCellByDisplayRow(quantityTargetRow, 4, nextValue);
               setQuantityModalOpen(false);
               setQuantityTargetRow(null);
               setQuantityInitial("");
             }}
           />
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <VehicleSizeEditModal
             open={vehicleModalOpen}
             vehicleSizeOptions={vehicleSizeOptions}
@@ -1159,14 +1306,14 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (vehicleTargetRow == null) return;
-              setInboundCell(vehicleTargetRow, 5, nextValue);
+              setOrdersPdfCellByDisplayRow(vehicleTargetRow, 5, nextValue);
               setVehicleModalOpen(false);
               setVehicleTargetRow(null);
               setVehicleInitial("");
             }}
           />
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <SimpleValueEditModal
             open={wreckerModalOpen}
             title="ﾚｯｶｰ 変更（デモ）"
@@ -1182,14 +1329,14 @@ const FeaturePlaceholder = () => {
             onConfirm={(nextValue) => {
               if (wreckerTargetRow == null) return;
               // 「選択無し」は空欄にする
-              setInboundCell(wreckerTargetRow, 6, nextValue === "選択無し" ? "" : nextValue);
+              setOrdersPdfCellByDisplayRow(wreckerTargetRow, 6, nextValue === "選択無し" ? "" : nextValue);
               setWreckerModalOpen(false);
               setWreckerTargetRow(null);
               setWreckerInitial("");
             }}
           />
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <DriverAssignModal
             open={driverModalOpen}
             initialKind={driverInitial.kind}
@@ -1204,14 +1351,14 @@ const FeaturePlaceholder = () => {
               if (driverTargetRow == null) return;
               const lines: string[] = [];
               if (next.kind === "選択無し") {
-                setInboundCell(driverTargetRow, 7, "");
+                setOrdersPdfCellByDisplayRow(driverTargetRow, 7, "");
               } else if (next.kind === "先方") {
-                setInboundCell(driverTargetRow, 7, "先方");
+                setOrdersPdfCellByDisplayRow(driverTargetRow, 7, "先方");
               } else {
                 lines.push(next.kind);
                 if (next.driverId) lines.push(`運転手ID:${next.driverId}`);
                 if (next.outsourceId) lines.push(`外注ID:${next.outsourceId}`);
-                setInboundCell(driverTargetRow, 7, lines.join("\n"));
+                setOrdersPdfCellByDisplayRow(driverTargetRow, 7, lines.join("\n"));
               }
               setDriverModalOpen(false);
               setDriverTargetRow(null);
@@ -1219,7 +1366,7 @@ const FeaturePlaceholder = () => {
             }}
           />
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <SiteEditModal
             open={siteModalOpen}
             title="現場（デモ）"
@@ -1233,14 +1380,14 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(next) => {
               if (siteTargetRow == null) return;
-              setInboundCell(siteTargetRow, 9, `${next.siteName}（${next.siteId}）`);
+              setOrdersPdfCellByDisplayRow(siteTargetRow, 9, `${next.siteName}（${next.siteId}）`);
               setSiteModalOpen(false);
               setSiteTargetRow(null);
               setSiteInitial({});
             }}
           />
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <TimeRangeEditModal
             open={timeModalOpen}
             initialValue={timeInitial}
@@ -1251,14 +1398,14 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (timeTargetRow == null) return;
-              setInboundCell(timeTargetRow, 10, nextValue);
+              setOrdersPdfCellByDisplayRow(timeTargetRow, 10, nextValue);
               setTimeModalOpen(false);
               setTimeTargetRow(null);
               setTimeInitial("");
             }}
           />
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <FactoryNoteEditModal
             open={factoryNoteModalOpen}
             initialValue={factoryNoteInitial}
@@ -1269,14 +1416,14 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (factoryNoteTargetRow == null) return;
-              setInboundCell(factoryNoteTargetRow, 11, nextValue);
+              setOrdersPdfCellByDisplayRow(factoryNoteTargetRow, 11, nextValue);
               setFactoryNoteModalOpen(false);
               setFactoryNoteTargetRow(null);
               setFactoryNoteInitial("");
             }}
           />
         )}
-        {feature.key === "orders" && showOrdersResults && shouldShowInboundOrdersPdfResult && (
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <TransportFeeEditModal
             open={transportFeeModalOpen}
             initialValue={transportFeeInitial}
@@ -1287,7 +1434,7 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (transportFeeTargetRow == null) return;
-              setInboundCell(transportFeeTargetRow, 13, nextValue);
+              setOrdersPdfCellByDisplayRow(transportFeeTargetRow, 13, nextValue);
               setTransportFeeModalOpen(false);
               setTransportFeeTargetRow(null);
               setTransportFeeInitial("");
