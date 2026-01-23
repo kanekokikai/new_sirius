@@ -464,11 +464,26 @@ table {
 .inbound-pdf-table.inbound-pdf-table--pickup td {
   color: #0f172a; /* slate-900 相当で高コントラスト */
 }
+.inbound-pdf-table.inbound-pdf-table--pickup {
+  /* 搬入と同じサイズ/レイアウトで固定（色だけ変える） */
+  table-layout: fixed;
+  font-size: 12px;
+  width: max-content;
+  max-width: none;
+}
 .inbound-pdf-table.inbound-pdf-table--pickup th {
   background: #fef3c7; /* amber-100 */
 }
 .inbound-pdf-table.inbound-pdf-table--pickup td {
   background: #fffbeb; /* amber-50 */
+}
+.inbound-pdf-table.inbound-pdf-table--pickup th[data-col="3"],
+.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="3"],
+.inbound-pdf-table.inbound-pdf-table--pickup th[data-col="4"],
+.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="4"] {
+  width: 52px;
+  min-width: 52px;
+  max-width: 52px;
 }
 
 /* 搬入＋引取をミックス表示する場合：引取行だけ薄いイエロー */
@@ -489,6 +504,14 @@ table {
 .inbound-pdf-table td[data-col="6"],
 .inbound-pdf-table td[data-col="10"] {
   text-align: center;
+}
+.inbound-pdf-table th[data-col="3"],
+.inbound-pdf-table td[data-col="3"],
+.inbound-pdf-table th[data-col="4"],
+.inbound-pdf-table td[data-col="4"] {
+  width: 52px;
+  min-width: 52px;
+  max-width: 52px;
 }
 .inbound-pdf-row-start td {
   border-top-width: 2px;
@@ -642,6 +665,43 @@ th {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
   align-items: flex-end;
+}
+
+/* Orders search: make the filter panel compact without impacting other pages */
+.filter-bar.multi.orders-filter-compact {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px 10px;
+}
+
+.filter-bar.multi.orders-filter-compact .filter-group {
+  gap: 4px;
+}
+
+.filter-bar.multi.orders-filter-compact .filter-group label {
+  font-size: 11px;
+  line-height: 1.15;
+  color: #475569;
+}
+
+.filter-bar.multi.orders-filter-compact .filter-input {
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  height: 32px;
+}
+
+.filter-bar.multi.orders-filter-compact .filter-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.filter-bar.multi.orders-filter-compact .filter-actions .button {
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 8px;
 }
 
 .filter-group {

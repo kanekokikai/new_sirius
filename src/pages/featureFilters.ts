@@ -21,10 +21,24 @@ export type MachineFilter = {
 export type OrdersFilter = {
   dateFrom: string;
   dateTo: string;
+
+  customerId: string;
+  customerName: string;
+  siteId: string;
+  siteName: string;
+
+  // 旧仕様：受注一覧の「種類（搬入/引取/移動）」をボタンで複数選択
   kinds: OrderCreateType[];
-  type: string;
-  customer: string;
-  site: string;
+
+  kindId: string;
+  typeId: string;
+  machineNo: string;
+
+  arrangement: "all" | "inhouse" | "other";
+  arrangementPartnerId: string; // 手配指定=他社のときのみ入力
+
+  transport: "all" | "unconfirmed" | "client" | "inhouse" | "outsourced";
+  transportAssigneeCode: string; // 回送指定!=全件のとき入力（自社=社員ID, 外注=取引先ID）
 };
 
 export type SitesFilter = {
@@ -143,14 +157,37 @@ export const filterOrdersSections = (
   search: string,
   filter: OrdersFilter
 ) => {
-  const { dateFrom, dateTo, kinds, type, customer, site } = filter;
+  const {
+    dateFrom,
+    dateTo,
+    customerId,
+    customerName,
+    siteId,
+    siteName,
+    kinds,
+    kindId,
+    typeId,
+    machineNo,
+    arrangement,
+    arrangementPartnerId,
+    transport,
+    transportAssigneeCode
+  } = filter;
   const hasAnyFilter = [
     dateFrom,
     dateTo,
+    customerId,
+    customerName,
+    siteId,
+    siteName,
     kinds.length ? "kinds" : "",
-    type,
-    customer,
-    site
+    kindId,
+    typeId,
+    machineNo,
+    arrangement,
+    arrangementPartnerId,
+    transport,
+    transportAssigneeCode
   ].some((v) => (typeof v === "string" ? v.trim() : !!v));
   const q = toLower(search);
   const applyLegacy = !!q && !hasAnyFilter;
@@ -160,25 +197,34 @@ export const filterOrdersSections = (
     rows: section.rows.filter((row) => {
       const orderKind = String(row[1]);
       const orderType = String(row[2]);
-      const customerName = String(row[3]);
+      const rowCustomerName = String(row[3]);
+      const machine = String(row[4]);
       const siteName = String(row[5]);
       const scheduledDate = String(row[6]);
 
       const matchesDateFrom = !dateFrom || scheduledDate >= dateFrom;
       const matchesDateTo = !dateTo || scheduledDate <= dateTo;
       const matchesKinds =
-        kinds.length === 0 ||
-        kinds.some((k) => orderKind.toLowerCase().includes(toLower(k)));
-      const matchesType = !type || orderType.toLowerCase().includes(toLower(type));
-      const matchesCustomer = !customer || customerName.toLowerCase().includes(toLower(customer));
-      const matchesSite = !site || siteName.toLowerCase().includes(toLower(site));
+        kinds.length === 0 || kinds.some((k) => orderKind.toLowerCase().includes(toLower(k)));
+      const matchesKindId = !kindId || orderKind.toLowerCase().includes(toLower(kindId));
+      const matchesTypeId = !typeId || orderType.toLowerCase().includes(toLower(typeId));
+      const matchesMachineNo = !machineNo || machine.toLowerCase().includes(toLower(machineNo));
+      // NOTE: デモデータにはID列が無いので、ID検索は名称列への部分一致として扱う（実データ連携時に置換する）
+      const matchesCustomer =
+        (!customerId && !customerName) ||
+        rowCustomerName.toLowerCase().includes(toLower(customerId || customerName));
+      const matchesSite =
+        (!siteId && !siteName) ||
+        siteName.toLowerCase().includes(toLower(siteId || siteName));
 
       if (hasAnyFilter) {
         return (
           matchesDateFrom &&
           matchesDateTo &&
           matchesKinds &&
-          matchesType &&
+          matchesKindId &&
+          matchesTypeId &&
+          matchesMachineNo &&
           matchesCustomer &&
           matchesSite
         );
