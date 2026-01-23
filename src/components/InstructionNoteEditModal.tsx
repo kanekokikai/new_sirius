@@ -13,7 +13,7 @@ export const InstructionNoteEditModal: React.FC<Props> = ({
   open,
   title = "指示備考 変更（デモ）",
   initialValue,
-  placeholder = "例) ○都筑移動、コベルコ希望",
+  placeholder = "例) ※都筑移動、コベルコ希望",
   onClose,
   onConfirm
 }) => {
@@ -57,7 +57,7 @@ export const InstructionNoteEditModal: React.FC<Props> = ({
         </div>
         <div className="modal-body">
           <p style={{ marginTop: 0, marginBottom: 10, color: "#475569", fontSize: 12, lineHeight: 1.35 }}>
-            機械名列に含まれる「指示備考」（例: 先頭が「○」の行）を編集するデモモーダルです。
+            機械名列に含まれる「指示備考」（例: 先頭が「※」の行）を編集するデモモーダルです。
           </p>
           <div className="filter-group" style={{ width: "100%" }}>
             <label>指示備考</label>

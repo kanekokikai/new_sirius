@@ -33,7 +33,7 @@ export const machineCategoryMasterMock: MachineCategoryMasterItem[] = [
 export const machineTypeByMachineNameMock: Record<string, { kindId: string; categoryId: string }> = {
   // inboundOrderSearchRawRows の機械名（例）
   "0.459レーザー": { kindId: "K-003", categoryId: "C-999" },
-  "○都筑移動、コベルコ希望": { kindId: "K-001", categoryId: "C-101" },
+  "※都筑移動、コベルコ希望": { kindId: "K-001", categoryId: "C-101" },
   "無線機X10": { kindId: "K-004", categoryId: "C-999" },
   "タイピンマイク": { kindId: "K-004", categoryId: "C-999" },
   "0.2t?": { kindId: "K-003", categoryId: "C-999" },

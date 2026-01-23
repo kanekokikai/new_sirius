@@ -15,6 +15,7 @@ import { InboundPdfTable } from "../components/InboundPdfTable";
 import { LocationChangeModal } from "../components/LocationChangeModal";
 import { locationMasterMock } from "../data/locationMasterMock";
 import { MachineTypeChangeModal } from "../components/MachineTypeChangeModal";
+import { PickupOrdersMachineSelectModal } from "../components/PickupOrdersMachineSelectModal";
 import { MachineNoEditModal } from "../components/MachineNoEditModal";
 import { SimpleValueEditModal } from "../components/SimpleValueEditModal";
 import { InstructionNoteEditModal } from "../components/InstructionNoteEditModal";
@@ -35,6 +36,7 @@ import {
   machineKindMasterMock,
   machineTypeByMachineNameMock
 } from "../data/machineTypeMasterMock";
+import { pickupOrdersMachineSelectMock } from "../data/pickupOrdersMachineSelectMock";
 import { Department } from "../types";
 import { useAuth, getDepartmentPermissions } from "../auth/AuthContext";
 import {
@@ -186,6 +188,20 @@ const FeaturePlaceholder = () => {
   const [machineTypeTargetRow, setMachineTypeTargetRow] = useState<number | null>(null);
   const [machineTypeInitial, setMachineTypeInitial] = useState<{ kindId?: string; categoryId?: string }>({});
 
+  // 引取受注: 機械名ダブルクリック時の「出庫中一覧 / 受注一覧」モーダル（デモ）
+  const [pickupOrdersMachineModalOpen, setPickupOrdersMachineModalOpen] = useState(false);
+  const [pickupOrdersMachineTargetRow, setPickupOrdersMachineTargetRow] = useState<number | null>(null);
+  const [pickupOrdersMachineInitialSelectedIds, setPickupOrdersMachineInitialSelectedIds] = useState<string[]>([]);
+  const [pickupOrdersMachineInitialInstructionNote, setPickupOrdersMachineInitialInstructionNote] = useState<string>("");
+  const [pickupOrdersMachineInTableNames, setPickupOrdersMachineInTableNames] = useState<string[]>([]);
+  const [pickupOrdersMachineSelectedFallbackNames, setPickupOrdersMachineSelectedFallbackNames] = useState<string[]>([]);
+  const [pickupOrdersMachinePinnedId, setPickupOrdersMachinePinnedId] = useState<string>("");
+  const [pickupOrdersMachinePinnedName, setPickupOrdersMachinePinnedName] = useState<string>("");
+  const [pickupOrdersMachineContext, setPickupOrdersMachineContext] = useState<{
+    customerName?: string;
+    siteName?: string;
+  }>({});
+
   const [instructionNoteModalOpen, setInstructionNoteModalOpen] = useState(false);
   const [instructionNoteTargetRow, setInstructionNoteTargetRow] = useState<number | null>(null);
   const [instructionNoteInitial, setInstructionNoteInitial] = useState<string>("");
@@ -261,7 +277,10 @@ const FeaturePlaceholder = () => {
     return hh * 60 + mm;
   };
 
-  const isPdfGroupStartRow = (row: string[]) => (row[0] ?? "").trim().length > 0 || (row[1] ?? "").trim().length > 0;
+  const isPdfGroupStartRow = (row?: string[]) => {
+    if (!row) return false;
+    return (row[0] ?? "").trim().length > 0 || (row[1] ?? "").trim().length > 0;
+  };
 
   type OrdersPdfRowRef = { kind: "搬入" | "引取"; sourceRowIndex: number };
   type OrdersPdfGroup = { kind: "搬入" | "引取"; startRowIndex: number; endRowIndex: number; startMinutes: number };
@@ -325,12 +344,12 @@ const FeaturePlaceholder = () => {
   const normalizeInstructionNoteForCell = (v: string): string => {
     const trimmed = (v ?? "").trim();
     if (!trimmed) return "";
-    return trimmed.startsWith("○") ? trimmed : `○${trimmed}`;
+    return trimmed.startsWith("※") ? trimmed : `※${trimmed}`;
   };
 
   const isInstructionNoteRow = (row: string[] | undefined): boolean => {
     if (!row) return false;
-    return (row[0] ?? "").trim() === "" && (row[1] ?? "").trim() === "" && (row[2] ?? "").trim().startsWith("○");
+    return (row[0] ?? "").trim() === "" && (row[1] ?? "").trim() === "" && (row[2] ?? "").trim().startsWith("※");
   };
 
   const parseSiteFromCell = (value: string): { siteId?: string; siteName?: string } => {
@@ -339,6 +358,39 @@ const FeaturePlaceholder = () => {
     const m = v.match(/^(.+?)（(.+?)）$/);
     if (m) return { siteName: m[1], siteId: m[2] };
     return { siteName: v || undefined };
+  };
+
+  const normalizeCustomerNameFromCell = (value: string) => {
+    const v = String(value ?? "").trim();
+    if (!v) return "";
+    // 例: "正栄工業\n20箱" のようなケースは先頭行だけを得意先名として扱う（デモ）
+    const firstLine = v.split("\n")[0]?.trim() ?? "";
+    // 例: "ジャパンバイル 東京" / "正栄工業 20箱" のようなケースは先頭トークンだけを得意先名として扱う（デモ）
+    return firstLine.split(/\s+/)[0]?.trim() ?? "";
+  };
+
+  const parseMachineNamesFromCell = (value: string) => {
+    const v = String(value ?? "");
+    return v
+      .split("\n")
+      .map((x) => x.trim())
+      .filter((x) => Boolean(x) && !x.startsWith("※"));
+  };
+
+  const getOrdersPdfGroupStartDisplayRow = (shownRows: string[][], displayRowIndex: number) => {
+    let i = Math.max(0, Math.min(displayRowIndex, shownRows.length - 1));
+    while (i > 0 && !isPdfGroupStartRow(shownRows[i])) i -= 1;
+    return i;
+  };
+
+  const getOrdersPdfMergedValueInGroup = (shownRows: string[][], groupStartDisplayRow: number, colIndex: number) => {
+    // groupStart row の値が空の場合もあるため、グループ内で「空でない最初の値」を探す（デモ）
+    for (let i = groupStartDisplayRow; i < shownRows.length; i += 1) {
+      if (i !== groupStartDisplayRow && isPdfGroupStartRow(shownRows[i])) break;
+      const v = String(shownRows[i]?.[colIndex] ?? "").trim();
+      if (v) return v;
+    }
+    return "";
   };
 
   type OrderDemoForm = {
@@ -823,13 +875,91 @@ const FeaturePlaceholder = () => {
             return;
           }
           if (colIndex === 2) {
-            // 機械名列のうち「指示備考」行（例: 先頭が○）は、種類/種別変更ではなく指示備考編集モーダル
-            if ((value ?? "").trim().startsWith("○")) {
+            // 機械名列のうち「指示備考」行（例: 先頭が※）は、種類/種別変更ではなく指示備考編集モーダル
+            if ((value ?? "").trim().startsWith("※")) {
               setInstructionNoteTargetRow(rowIndex);
               setInstructionNoteInitial(value ?? "");
               setInstructionNoteModalOpen(true);
               return;
             }
+
+            // 引取は搬入と編集方式が異なるため、専用モーダルで「出庫中一覧/受注一覧」から選択する（デモ）
+            const activeKind: "搬入" | "引取" = shouldShowMixedOrdersPdfResult
+              ? (ordersPdfDisplay.rowRefs[rowIndex]?.kind ?? ordersPdfKindLabel)
+              : ordersPdfKindLabel;
+            if (activeKind === "引取") {
+              const shownRows = shouldShowMixedOrdersPdfResult
+                ? ordersPdfDisplay.rows
+                : shouldShowInboundOrdersPdfResult
+                  ? inboundRows
+                  : pickupRows;
+              if (!shownRows[rowIndex]) return;
+
+              const groupStart = getOrdersPdfGroupStartDisplayRow(shownRows, rowIndex);
+              let groupEnd = groupStart + 1;
+              while (groupEnd < shownRows.length && !isPdfGroupStartRow(shownRows[groupEnd])) groupEnd += 1;
+
+              const inTableNames: string[] = [];
+              for (let i = groupStart; i < groupEnd; i += 1) {
+                const cell = String(shownRows[i]?.[2] ?? "").trim();
+                if (!cell) continue;
+                if (cell.startsWith("※")) continue;
+                inTableNames.push(cell);
+              }
+
+              const customerCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, 8);
+              const siteCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, 9);
+              const customerName = normalizeCustomerNameFromCell(customerCell);
+              const siteName = parseSiteFromCell(siteCell).siteName ?? String(siteCell ?? "").trim();
+
+              // 初期チェックは「ダブルクリックしたその行の機械」だけ（=1行=1商品）
+              const selectedFallbackMachineNames = parseMachineNamesFromCell(value ?? "");
+              const initialSelectedMachineNames = new Set<string>(selectedFallbackMachineNames);
+              const pinnedName = selectedFallbackMachineNames[0] ?? "";
+              const pinnedId = pinnedName
+                ? pickupOrdersMachineSelectMock.find((x) => x.machineName === pinnedName)?.id ?? ""
+                : "";
+              const customerId = ordersFilter.customerId.trim();
+              const siteId = ordersFilter.siteId.trim();
+
+              const filtered = pickupOrdersMachineSelectMock.filter((x) => {
+                const customerOk = customerId
+                  ? x.customerId.includes(customerId)
+                  : customerName
+                    ? x.customerName.includes(customerName) || customerName.includes(x.customerName)
+                    : true;
+                const siteOk = siteId
+                  ? x.siteId.includes(siteId)
+                  : siteName
+                    ? x.siteName.includes(siteName) || siteName.includes(x.siteName)
+                    : true;
+                return customerOk && siteOk;
+              });
+
+              // 初期チェックは、フィルタ結果が空でも「デモマスタ全体」から拾う（=表の選択機械を常に操作可能にする）
+              const initialSelectedIds = pickupOrdersMachineSelectMock
+                .filter((x) => initialSelectedMachineNames.has(x.machineName))
+                .map((x) => x.id);
+
+              // 指示備考（直下にある※行）を初期値として拾う（同一グループ内のみ）
+              const nextRow = shownRows[rowIndex + 1];
+              const isNextRowInSameGroup = nextRow && !isPdfGroupStartRow(nextRow);
+              const initialNote =
+                isNextRowInSameGroup && isInstructionNoteRow(nextRow) ? String(nextRow?.[2] ?? "").trim() : "";
+
+              setPickupOrdersMachineTargetRow(rowIndex);
+              setPickupOrdersMachineInitialSelectedIds(initialSelectedIds);
+              setPickupOrdersMachineInitialInstructionNote(initialNote);
+              setPickupOrdersMachineInTableNames(inTableNames);
+              // フィルタ結果が空でも、表で選択中の機械は表示したい（デモマスタに無い場合もあるため名前でも渡す）
+              setPickupOrdersMachineSelectedFallbackNames(selectedFallbackMachineNames);
+              setPickupOrdersMachinePinnedId(pinnedId);
+              setPickupOrdersMachinePinnedName(pinnedName);
+              setPickupOrdersMachineContext({ customerName, siteName });
+              setPickupOrdersMachineModalOpen(true);
+              return;
+            }
+
             const shownRows = shouldShowMixedOrdersPdfResult
               ? ordersPdfDisplay.rows
               : shouldShowInboundOrdersPdfResult
@@ -837,7 +967,7 @@ const FeaturePlaceholder = () => {
                 : pickupRows;
             const nextRow = shownRows[rowIndex + 1];
             const nextRowInstructionNote =
-              nextRow && (nextRow[0] ?? "").trim() === "" && (nextRow[1] ?? "").trim() === "" && (nextRow[2] ?? "").trim().startsWith("○")
+              nextRow && (nextRow[0] ?? "").trim() === "" && (nextRow[1] ?? "").trim() === "" && (nextRow[2] ?? "").trim().startsWith("※")
                 ? (nextRow[2] ?? "")
                 : "";
             const parsed = parseMachineTypeFromCell(value);
@@ -1513,6 +1643,148 @@ const FeaturePlaceholder = () => {
           />
         )}
         {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
+          <PickupOrdersMachineSelectModal
+            open={pickupOrdersMachineModalOpen}
+            customerId={ordersFilter.customerId}
+            siteId={ordersFilter.siteId}
+            customerName={pickupOrdersMachineContext.customerName}
+            siteName={pickupOrdersMachineContext.siteName}
+            allItems={pickupOrdersMachineSelectMock}
+            initialInstructionNote={pickupOrdersMachineInitialInstructionNote}
+            inTableMachineNames={pickupOrdersMachineInTableNames}
+            selectedFallbackMachineNames={pickupOrdersMachineSelectedFallbackNames}
+            pinnedMachineId={pickupOrdersMachinePinnedId || undefined}
+            pinnedMachineName={pickupOrdersMachinePinnedName || undefined}
+            outboundItems={pickupOrdersMachineSelectMock
+              .filter((x) => x.status === "出庫中")
+              .filter((x) => {
+                const customerId = ordersFilter.customerId.trim();
+                const siteId = ordersFilter.siteId.trim();
+                const customerOk = customerId
+                  ? x.customerId.includes(customerId)
+                  : pickupOrdersMachineContext.customerName
+                    ? x.customerName.includes(pickupOrdersMachineContext.customerName) ||
+                      pickupOrdersMachineContext.customerName.includes(x.customerName)
+                    : true;
+                const siteOk = siteId
+                  ? x.siteId.includes(siteId)
+                  : pickupOrdersMachineContext.siteName
+                    ? x.siteName.includes(pickupOrdersMachineContext.siteName) ||
+                      pickupOrdersMachineContext.siteName.includes(x.siteName)
+                    : true;
+                return customerOk && siteOk;
+              })}
+            orderedItems={pickupOrdersMachineSelectMock
+              .filter((x) => x.status === "受注中")
+              .filter((x) => {
+                const customerId = ordersFilter.customerId.trim();
+                const siteId = ordersFilter.siteId.trim();
+                const customerOk = customerId
+                  ? x.customerId.includes(customerId)
+                  : pickupOrdersMachineContext.customerName
+                    ? x.customerName.includes(pickupOrdersMachineContext.customerName) ||
+                      pickupOrdersMachineContext.customerName.includes(x.customerName)
+                    : true;
+                const siteOk = siteId
+                  ? x.siteId.includes(siteId)
+                  : pickupOrdersMachineContext.siteName
+                    ? x.siteName.includes(pickupOrdersMachineContext.siteName) ||
+                      pickupOrdersMachineContext.siteName.includes(x.siteName)
+                    : true;
+                return customerOk && siteOk;
+              })}
+            initialSelectedIds={pickupOrdersMachineInitialSelectedIds}
+            onClose={() => {
+              setPickupOrdersMachineModalOpen(false);
+              setPickupOrdersMachineTargetRow(null);
+              setPickupOrdersMachineInitialSelectedIds([]);
+              setPickupOrdersMachineInitialInstructionNote("");
+              setPickupOrdersMachineInTableNames([]);
+              setPickupOrdersMachineSelectedFallbackNames([]);
+              setPickupOrdersMachinePinnedId("");
+              setPickupOrdersMachinePinnedName("");
+              setPickupOrdersMachineContext({});
+            }}
+            onConfirm={(selectedIds, instructionNote) => {
+              if (pickupOrdersMachineTargetRow == null) return;
+              const selected = selectedIds
+                .map((id) => pickupOrdersMachineSelectMock.find((x) => x.id === id))
+                .filter((x): x is NonNullable<typeof x> => Boolean(x));
+              const selectedNames = Array.from(
+                new Set(selected.map((x) => x.machineName).map((x) => x.trim()).filter(Boolean))
+              );
+
+              // 他行に影響を与えない: ダブルクリックした「その行」だけを更新し、追加分はその直下に挿入する
+              const targetRef = ordersPdfDisplay.rowRefs[pickupOrdersMachineTargetRow];
+              if (!targetRef || targetRef.kind !== "引取") return;
+              const targetSrcIndex = targetRef.sourceRowIndex;
+
+              setPickupRows((prev) => {
+                const next = [...prev];
+                const base = [...(next[targetSrcIndex] ?? Array.from({ length: inboundOrderSearchColumns.length }).map(() => ""))];
+                const currentMachineName = String(base[2] ?? "").trim();
+
+                // 反映時に「ピン留め（=ダブルクリックした行の機械）」が未選択なら、その行を削除（直下の指示備考も削除）
+                const pinnedId = pickupOrdersMachinePinnedId.trim();
+                const wantsPinned = pinnedId ? selectedIds.includes(pinnedId) : true;
+                if (!wantsPinned && currentMachineName) {
+                  if (isInstructionNoteRow(next[targetSrcIndex + 1])) next.splice(targetSrcIndex + 1, 1);
+                  next.splice(targetSrcIndex, 1);
+                  return next;
+                }
+
+                // 追加分は対象行の直下に、1商品=1行で挿入（ただし表に載っていないものだけ）
+                const inTableSet = new Set(pickupOrdersMachineInTableNames.map((x) => x.trim()).filter(Boolean));
+                const toAddNames = selectedNames
+                  .filter((name) => name && name !== currentMachineName)
+                  .filter((name) => !inTableSet.has(name));
+                const rowsToInsert = toAddNames.map((name) => {
+                  const row = Array.from({ length: inboundOrderSearchColumns.length }).map(() => "");
+                  row[2] = name;
+                  row[4] = "1";
+                  return row;
+                });
+
+                if (rowsToInsert.length > 0) {
+                  // 指示備考が直下にある場合は、その下に追加商品を並べる
+                  const hasNoteDirectlyBelow = isInstructionNoteRow(next[targetSrcIndex + 1]);
+                  const insertAt = hasNoteDirectlyBelow ? targetSrcIndex + 2 : targetSrcIndex + 1;
+                  next.splice(insertAt, 0, ...rowsToInsert);
+                }
+
+                // 指示備考は「商品が1つだけ選ばれている場合のみ」有効（=複数選択時は触らない）
+                const noteText = normalizeInstructionNoteForCell(instructionNote);
+                const maybeNext = next[targetSrcIndex + 1];
+                const hasNoteDirectlyBelow = isInstructionNoteRow(maybeNext);
+                if (selectedIds.length === 1 && wantsPinned) {
+                  if (noteText) {
+                    if (hasNoteDirectlyBelow) {
+                      const updated = [...maybeNext];
+                      updated[2] = noteText;
+                      updated[4] = "";
+                      next[targetSrcIndex + 1] = updated;
+                    } else {
+                      const noteRow = Array.from({ length: inboundOrderSearchColumns.length }).map(() => "");
+                      noteRow[2] = noteText;
+                      noteRow[4] = "";
+                      next.splice(targetSrcIndex + 1, 0, noteRow);
+                    }
+                  }
+                }
+
+                return next;
+              });
+
+              setPickupOrdersMachineModalOpen(false);
+              setPickupOrdersMachineTargetRow(null);
+              setPickupOrdersMachineInitialSelectedIds([]);
+              setPickupOrdersMachineInitialInstructionNote("");
+              setPickupOrdersMachineInTableNames([]);
+              setPickupOrdersMachineContext({});
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
           <MachineTypeChangeModal
             open={machineTypeModalOpen}
             kindOptions={machineKindMasterMock}
@@ -1575,7 +1847,7 @@ const FeaturePlaceholder = () => {
                   nextRow &&
                   (nextRow[0] ?? "").trim() === "" &&
                   (nextRow[1] ?? "").trim() === "" &&
-                  (nextRow[2] ?? "").trim().startsWith("○");
+                  (nextRow[2] ?? "").trim().startsWith("※");
 
                 if (hasNoteRowDirectlyBelow) {
                   setOrdersPdfCellByDisplayRow(machineTypeTargetRow + 1, 2, noteText);

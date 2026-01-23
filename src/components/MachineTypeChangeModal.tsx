@@ -139,7 +139,7 @@ export const MachineTypeChangeModal: React.FC<Props> = ({
               className="filter-input"
               style={{ height: 90, resize: "vertical", whiteSpace: "pre-wrap" }}
               value={instructionNote}
-              placeholder="例) ○都筑移動、コベルコ希望"
+              placeholder="例) ※都筑移動、コベルコ希望"
               onChange={(e) => setInstructionNote(e.target.value)}
             />
           </div>
