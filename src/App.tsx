@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import FeaturePlaceholder from "./pages/FeaturePlaceholder";
 import DispatchInstructionPage from "./pages/DispatchInstructionPage";
 import OutboundRegisterPage from "./pages/OutboundRegisterPage";
+import InboundOrderDetailPage from "./pages/InboundOrderDetailPage";
 
 const rawBaseUrl = import.meta.env.BASE_URL;
 const routerBasename = rawBaseUrl === "/" ? "/" : rawBaseUrl.replace(/\/$/, "");
@@ -50,6 +51,16 @@ const App = () => (
           <ProtectedRoute>
             <AppLayout>
               <FeaturePlaceholder />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/orders/inbound-detail"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <InboundOrderDetailPage />
             </AppLayout>
           </ProtectedRoute>
         }

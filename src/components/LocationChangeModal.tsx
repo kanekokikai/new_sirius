@@ -9,6 +9,7 @@ type Props = {
   locations: LocationMasterItem[];
   onClose: () => void;
   onConfirm: (next: { id: string; name: string }) => void;
+  onOrderDetail?: () => void;
 };
 
 const findById = (locations: LocationMasterItem[], id: string) => locations.find((x) => x.id === id);
@@ -22,7 +23,8 @@ export const LocationChangeModal: React.FC<Props> = ({
   initialLocationName,
   locations,
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initial = useMemo(() => {
     if (initialLocationId) {
@@ -144,6 +146,11 @@ export const LocationChangeModal: React.FC<Props> = ({
           >
             変更
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>

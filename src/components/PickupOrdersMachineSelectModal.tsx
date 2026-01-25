@@ -19,6 +19,7 @@ type Props = {
   initialInstructionNote?: string;
   onClose: () => void;
   onConfirm: (selectedIds: string[], instructionNote: string) => void;
+  onOrderDetail?: () => void;
 };
 
 export const PickupOrdersMachineSelectModal: React.FC<Props> = ({
@@ -38,7 +39,8 @@ export const PickupOrdersMachineSelectModal: React.FC<Props> = ({
   initialSelectedIds,
   initialInstructionNote,
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initial = useMemo(() => Array.from(new Set(initialSelectedIds)), [initialSelectedIds]);
   const [selectedIds, setSelectedIds] = useState<string[]>(initial);
@@ -259,6 +261,11 @@ export const PickupOrdersMachineSelectModal: React.FC<Props> = ({
           >
             反映（デモ）
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>

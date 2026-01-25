@@ -17,6 +17,10 @@ type Props = {
   colWidths?: Array<string | undefined>;
   ariaLabel?: string;
   onCellDoubleClick?: (args: { rowIndex: number; colIndex: number; value: string }) => void;
+  /** optional row props (e.g. draggable) */
+  getRowProps?: (args: { rowIndex: number; row: string[] }) => React.HTMLAttributes<HTMLTableRowElement> | undefined;
+  /** optional cell renderer (e.g. for action buttons) */
+  renderCell?: (args: { rowIndex: number; colIndex: number; value: string; row: string[] }) => React.ReactNode;
 };
 
 type SpanMap = number[][];
@@ -33,7 +37,9 @@ export const InboundPdfTable: React.FC<Props> = ({
   groupStartColumnIndices = [0, 1],
   colWidths,
   ariaLabel,
-  onCellDoubleClick
+  onCellDoubleClick,
+  getRowProps,
+  renderCell
 }) => {
   const normalizedRows = useMemo(() => {
     return rows.map((r) => {
@@ -122,6 +128,9 @@ export const InboundPdfTable: React.FC<Props> = ({
         </thead>
         <tbody>
           {normalizedRows.map((row, rIdx) => (
+            (() => {
+              const rowProps = getRowProps?.({ rowIndex: rIdx, row }) ?? {};
+              return (
             <tr
               key={`r-${rIdx}`}
               className={[
@@ -130,6 +139,7 @@ export const InboundPdfTable: React.FC<Props> = ({
               ]
                 .filter(Boolean)
                 .join(" ") || undefined}
+              {...rowProps}
             >
               {columns.map((_, cIdx) => {
                 const span = spans[rIdx]?.[cIdx] ?? 1;
@@ -141,11 +151,13 @@ export const InboundPdfTable: React.FC<Props> = ({
                     rowSpan={span > 1 ? span : undefined}
                     onDoubleClick={() => onCellDoubleClick?.({ rowIndex: rIdx, colIndex: cIdx, value: row[cIdx] })}
                   >
-                    {row[cIdx]}
+                    {renderCell ? renderCell({ rowIndex: rIdx, colIndex: cIdx, value: row[cIdx], row }) : row[cIdx]}
                   </td>
                 );
               })}
             </tr>
+              );
+            })()
           ))}
         </tbody>
       </table>

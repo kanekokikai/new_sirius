@@ -6,6 +6,7 @@ type Props = {
   initialValue?: string; // e.g. "09:00～12:00", "9:00"
   onClose: () => void;
   onConfirm: (nextValue: string) => void;
+  onOrderDetail?: () => void;
 };
 
 const padTime = (v: string) => {
@@ -32,7 +33,8 @@ export const TimeRangeEditModal: React.FC<Props> = ({
   title = "時間 変更（デモ）",
   initialValue,
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initial = useMemo(() => parseInitial(initialValue), [initialValue]);
   const [from, setFrom] = useState(initial.from);
@@ -105,6 +107,11 @@ export const TimeRangeEditModal: React.FC<Props> = ({
           >
             変更
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>

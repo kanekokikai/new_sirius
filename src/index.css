@@ -281,6 +281,34 @@ a {
   transition: background 0.15s ease, border 0.15s ease, transform 0.1s ease;
 }
 
+.button:disabled,
+.button[disabled] {
+  cursor: not-allowed;
+  transform: none;
+  background: #f1f5f9; /* slate-100 */
+  color: #94a3b8; /* slate-400 */
+  border-color: #e2e8f0; /* slate-200 */
+  box-shadow: none;
+  opacity: 1; /* keep consistent across browsers */
+}
+
+.button.primary:disabled,
+.button.primary[disabled] {
+  background: #cbd5e1; /* slate-300 */
+  color: #fff;
+}
+
+.button:hover:disabled,
+.button:hover[disabled] {
+  background: #f1f5f9;
+}
+
+.button.primary:hover:disabled,
+.button.primary:hover[disabled] {
+  background: #cbd5e1;
+  transform: none;
+}
+
 .button.primary {
   background: linear-gradient(135deg, #2563eb, #3b82f6);
   color: #fff;
@@ -477,10 +505,10 @@ table {
 .inbound-pdf-table.inbound-pdf-table--pickup td {
   background: #fffbeb; /* amber-50 */
 }
-.inbound-pdf-table.inbound-pdf-table--pickup th[data-col="3"],
-.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="3"],
 .inbound-pdf-table.inbound-pdf-table--pickup th[data-col="4"],
-.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="4"] {
+.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="4"],
+.inbound-pdf-table.inbound-pdf-table--pickup th[data-col="5"],
+.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="5"] {
   width: 52px;
   min-width: 52px;
   max-width: 52px;
@@ -491,24 +519,46 @@ table {
   background: #fffbeb; /* amber-50 */
   color: #0f172a; /* readable */
 }
+
+/* 受注追加：挿入時のスライド（0.3s）とハイライト（2s） */
+@keyframes ordersRowEnter {
+  from {
+    transform: translateY(-6px);
+    opacity: 0.2;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.inbound-pdf-table tr.orders-row-insert td {
+  animation: ordersRowEnter 0.3s ease-out;
+}
+
+.inbound-pdf-table tr.orders-row-highlight td {
+  background: #dcfce7 !important; /* green-100 */
+  transition: background 0.2s ease;
+}
 /* 文章が入るセルは折り返し許可（画像の「※都筑移動…」等） */
-.inbound-pdf-table td[data-col="2"],
-.inbound-pdf-table td[data-col="11"] {
+.inbound-pdf-table td[data-col="3"],
+.inbound-pdf-table td[data-col="12"] {
   white-space: pre-wrap;
   overflow: visible;
   text-overflow: clip;
 }
 .inbound-pdf-table td[data-col="1"],
-.inbound-pdf-table td[data-col="3"],
+.inbound-pdf-table td[data-col="2"],
 .inbound-pdf-table td[data-col="4"],
-.inbound-pdf-table td[data-col="6"],
-.inbound-pdf-table td[data-col="10"] {
+.inbound-pdf-table td[data-col="5"],
+.inbound-pdf-table td[data-col="7"],
+.inbound-pdf-table td[data-col="11"] {
   text-align: center;
 }
-.inbound-pdf-table th[data-col="3"],
-.inbound-pdf-table td[data-col="3"],
 .inbound-pdf-table th[data-col="4"],
-.inbound-pdf-table td[data-col="4"] {
+.inbound-pdf-table td[data-col="4"],
+.inbound-pdf-table th[data-col="5"],
+.inbound-pdf-table td[data-col="5"] {
   width: 52px;
   min-width: 52px;
   max-width: 52px;
@@ -532,6 +582,34 @@ table {
   border: 1px solid #e2e8f0;
   padding: 12px 16px;
   box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+}
+
+/* 受注検索結果のトースト（簡易） */
+.orders-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 2000;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.18);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.98);
+  color: #0f172a;
+  max-width: min(720px, calc(100vw - 24px));
+}
+
+.orders-toast--success {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(220, 252, 231, 0.95);
+}
+
+.orders-toast--warn {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(255, 251, 235, 0.98);
 }
 
 th,

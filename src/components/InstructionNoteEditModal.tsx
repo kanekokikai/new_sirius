@@ -7,6 +7,7 @@ type Props = {
   placeholder?: string;
   onClose: () => void;
   onConfirm: (nextValue: string) => void;
+  onOrderDetail?: () => void;
 };
 
 export const InstructionNoteEditModal: React.FC<Props> = ({
@@ -15,7 +16,8 @@ export const InstructionNoteEditModal: React.FC<Props> = ({
   initialValue,
   placeholder = "例) ※都筑移動、コベルコ希望",
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initial = useMemo(() => (initialValue ?? "").trim(), [initialValue]);
   const [value, setValue] = useState(initial);
@@ -82,6 +84,11 @@ export const InstructionNoteEditModal: React.FC<Props> = ({
           >
             変更
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -12,6 +12,7 @@ type Props = {
   initialValue?: string; // e.g. "（7t）25000" or "回送住所:東京都\n（7t）25000"
   onClose: () => void;
   onConfirm: (nextValue: string) => void;
+  onOrderDetail?: () => void;
 };
 
 const parseInitial = (
@@ -48,7 +49,8 @@ export const TransportFeeEditModal: React.FC<Props> = ({
   title = "回送費編集（デモ）",
   initialValue,
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initial = useMemo(() => parseInitial(initialValue), [initialValue]);
 
@@ -177,6 +179,11 @@ export const TransportFeeEditModal: React.FC<Props> = ({
           <button className="button primary" type="button" onClick={() => onConfirm(preview)}>
             変更
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>

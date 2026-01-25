@@ -7,6 +7,7 @@ type Props = {
   initialValue?: string;
   onClose: () => void;
   onConfirm: (nextValue: string) => void;
+  onOrderDetail?: () => void;
 };
 
 export const MachineNoEditModal: React.FC<Props> = ({
@@ -15,7 +16,8 @@ export const MachineNoEditModal: React.FC<Props> = ({
   machineNoOptions,
   initialValue,
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initial = useMemo(() => {
     const v = (initialValue ?? "").trim();
@@ -99,6 +101,11 @@ export const MachineNoEditModal: React.FC<Props> = ({
           >
             変更
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>

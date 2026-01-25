@@ -11,6 +11,7 @@ type Props = {
   initialSiteName?: string;
   onClose: () => void;
   onConfirm: (next: { siteId: string; siteName: string }) => void;
+  onOrderDetail?: () => void;
 };
 
 const includes = (haystack: string, needle: string) =>
@@ -23,7 +24,8 @@ export const SiteEditModal: React.FC<Props> = ({
   initialSiteId,
   initialSiteName,
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initialMode: Mode = "現場ID検索";
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -364,6 +366,11 @@ export const SiteEditModal: React.FC<Props> = ({
           >
             決定
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>

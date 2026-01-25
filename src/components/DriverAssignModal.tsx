@@ -10,6 +10,7 @@ type Props = {
   initialOutsourceId?: string;
   onClose: () => void;
   onConfirm: (next: { kind: DriverAssignKind; driverId: string; outsourceId: string }) => void;
+  onOrderDetail?: () => void;
 };
 
 const parseFromCell = (
@@ -31,7 +32,8 @@ export const DriverAssignModal: React.FC<Props> = ({
   initialDriverId,
   initialOutsourceId,
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initial = useMemo(
     () => ({
@@ -138,6 +140,11 @@ export const DriverAssignModal: React.FC<Props> = ({
           >
             変更
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>

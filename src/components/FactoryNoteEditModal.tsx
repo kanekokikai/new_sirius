@@ -6,6 +6,7 @@ type Props = {
   initialValue?: string;
   onClose: () => void;
   onConfirm: (nextValue: string) => void;
+  onOrderDetail?: () => void;
 };
 
 export const FactoryNoteEditModal: React.FC<Props> = ({
@@ -13,7 +14,8 @@ export const FactoryNoteEditModal: React.FC<Props> = ({
   title = "工場備考編集（デモ）",
   initialValue,
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initial = useMemo(() => initialValue ?? "", [initialValue]);
   const [value, setValue] = useState(initial);
@@ -70,6 +72,11 @@ export const FactoryNoteEditModal: React.FC<Props> = ({
           <button className="button primary" type="button" onClick={() => onConfirm(value)}>
             変更
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>

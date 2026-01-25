@@ -12,6 +12,7 @@ type Props = {
   placeholder?: string;
   onClose: () => void;
   onConfirm: (nextValue: string) => void;
+  onOrderDetail?: () => void;
 };
 
 export const SimpleValueEditModal: React.FC<Props> = ({
@@ -23,7 +24,8 @@ export const SimpleValueEditModal: React.FC<Props> = ({
   initialValue,
   placeholder,
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initial = useMemo(() => (initialValue ?? "").trim(), [initialValue]);
   const [value, setValue] = useState(initial);
@@ -112,6 +114,11 @@ export const SimpleValueEditModal: React.FC<Props> = ({
           >
             変更
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>

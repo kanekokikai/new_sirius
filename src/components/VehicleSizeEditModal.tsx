@@ -7,6 +7,7 @@ type Props = {
   initialValue?: string; // e.g. "4t", "指定車:青ナンバー", "指定車（青ナンバー）"
   onClose: () => void;
   onConfirm: (nextValue: string) => void;
+  onOrderDetail?: () => void;
 };
 
 const parseInitial = (value: string | undefined): { size: string; specifiedText: string } => {
@@ -32,7 +33,8 @@ export const VehicleSizeEditModal: React.FC<Props> = ({
   vehicleSizeOptions,
   initialValue,
   onClose,
-  onConfirm
+  onConfirm,
+  onOrderDetail
 }) => {
   const initial = useMemo(() => parseInitial(initialValue), [initialValue]);
   const [size, setSize] = useState<string>(initial.size || vehicleSizeOptions[0] || "");
@@ -130,6 +132,11 @@ export const VehicleSizeEditModal: React.FC<Props> = ({
           >
             変更
           </button>
+          {onOrderDetail && (
+            <button className="button" type="button" onClick={onOrderDetail}>
+              受注詳細
+            </button>
+          )}
         </div>
       </div>
     </div>
