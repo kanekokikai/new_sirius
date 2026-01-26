@@ -505,10 +505,10 @@ table {
 .inbound-pdf-table.inbound-pdf-table--pickup td {
   background: #fffbeb; /* amber-50 */
 }
-.inbound-pdf-table.inbound-pdf-table--pickup th[data-col="4"],
-.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="4"],
 .inbound-pdf-table.inbound-pdf-table--pickup th[data-col="5"],
-.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="5"] {
+.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="5"],
+.inbound-pdf-table.inbound-pdf-table--pickup th[data-col="6"],
+.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="6"] {
   width: 52px;
   min-width: 52px;
   max-width: 52px;
@@ -541,24 +541,25 @@ table {
   transition: background 0.2s ease;
 }
 /* 文章が入るセルは折り返し許可（画像の「※都筑移動…」等） */
-.inbound-pdf-table td[data-col="3"],
-.inbound-pdf-table td[data-col="12"] {
+.inbound-pdf-table td[data-col="4"],
+.inbound-pdf-table td[data-col="13"] {
   white-space: pre-wrap;
   overflow: visible;
   text-overflow: clip;
 }
 .inbound-pdf-table td[data-col="1"],
 .inbound-pdf-table td[data-col="2"],
-.inbound-pdf-table td[data-col="4"],
 .inbound-pdf-table td[data-col="5"],
+.inbound-pdf-table td[data-col="6"],
 .inbound-pdf-table td[data-col="7"],
-.inbound-pdf-table td[data-col="11"] {
+.inbound-pdf-table td[data-col="8"],
+.inbound-pdf-table td[data-col="12"] {
   text-align: center;
 }
-.inbound-pdf-table th[data-col="4"],
-.inbound-pdf-table td[data-col="4"],
 .inbound-pdf-table th[data-col="5"],
-.inbound-pdf-table td[data-col="5"] {
+.inbound-pdf-table td[data-col="5"],
+.inbound-pdf-table th[data-col="6"],
+.inbound-pdf-table td[data-col="6"] {
   width: 52px;
   min-width: 52px;
   max-width: 52px;

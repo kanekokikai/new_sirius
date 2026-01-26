@@ -3,25 +3,31 @@ export type InboundDraft = {
   rows: string[][];
 };
 
-const KEY_INBOUND_ROWS = "demo.ordersPdf.inboundRows.v1";
-const KEY_PICKUP_ROWS = "demo.ordersPdf.pickupRows.v1";
-const KEY_INBOUND_DRAFT = "demo.ordersPdf.inboundDraft.v1";
+const KEY_INBOUND_ROWS = "demo.ordersPdf.inboundRows.v2";
+const KEY_PICKUP_ROWS = "demo.ordersPdf.pickupRows.v2";
+const KEY_INBOUND_DRAFT = "demo.ordersPdf.inboundDraft.v2";
 
-const TARGET_COLS = 15;
+const TARGET_COLS = 16;
 
-// v0(=14列) -> v1(=15列: 払出/件数の2列追加) へ移行
-const migrateRowToV1 = (row: string[]): string[] => {
+// v0(=14列) -> v1(=15列: 払出/件数の2列追加) -> v2(=16列: 状態の1列追加) へ移行
+const migrateRowToV2 = (row: string[]): string[] => {
   if (row.length === TARGET_COLS) return [...row];
+  if (row.length === 15) {
+    // v1: [0]払出 [1]件数 [2]場所 [3]機械名 [4]No [5]数量 [6]車輛 [7]ﾚｯｶｰ [8]運転手 [9]会社名 [10]現場 [11]時間 [12]備考 [13]アワー [14]回送費
+    // v2: [0]払出 [1]状態 [2]件数 [3]場所 ...
+    return [row[0] ?? "", "", row[1] ?? "", row[2] ?? "", row[3] ?? "", row[4] ?? "", row[5] ?? "", row[6] ?? "", row[7] ?? "", row[8] ?? "", row[9] ?? "", row[10] ?? "", row[11] ?? "", row[12] ?? "", row[13] ?? "", row[14] ?? ""];
+  }
   if (row.length === 14) {
-    // old: [0]空欄 [1]場所 [2]機械名 [3]No [4]数量 [5]車輛 [6]ﾚｯｶｰ [7]運転手 [8]会社名 [9]現場 [10]時間 [11]備考 [12]アワー [13]回送費
-    return ["", "", row[1] ?? "", row[2] ?? "", row[3] ?? "", row[4] ?? "", row[5] ?? "", row[6] ?? "", row[7] ?? "", row[8] ?? "", row[9] ?? "", row[10] ?? "", row[11] ?? "", row[12] ?? "", row[13] ?? ""];
+    // v0(old): [0]空欄 [1]場所 [2]機械名 [3]No [4]数量 [5]車輛 [6]ﾚｯｶｰ [7]運転手 [8]会社名 [9]現場 [10]時間 [11]備考 [12]アワー [13]回送費
+    // v2: [0]払出 [1]状態 [2]件数 [3]場所 ...
+    return ["", "", "", row[1] ?? "", row[2] ?? "", row[3] ?? "", row[4] ?? "", row[5] ?? "", row[6] ?? "", row[7] ?? "", row[8] ?? "", row[9] ?? "", row[10] ?? "", row[11] ?? "", row[12] ?? "", row[13] ?? ""];
   }
   // best-effort: pad/truncate
   const next = Array.from({ length: TARGET_COLS }).map((_, idx) => String(row[idx] ?? ""));
   return next;
 };
 
-const migrateRowsToV1 = (rows: string[][]): string[][] => rows.map((r) => migrateRowToV1(r));
+const migrateRowsToV2 = (rows: string[][]): string[][] => rows.map((r) => migrateRowToV2(r));
 
 const safeParseJson = (raw: string | null): unknown => {
   if (!raw) return null;
@@ -40,12 +46,12 @@ const isStringArrayArray = (v: unknown): v is string[][] => {
 export const loadInboundRows = (fallback: string[][]): string[][] => {
   const parsed = safeParseJson(localStorage.getItem(KEY_INBOUND_ROWS));
   if (isStringArrayArray(parsed)) {
-    const migrated = migrateRowsToV1(parsed);
+    const migrated = migrateRowsToV2(parsed);
     // persist migration to avoid mixed formats causing "見え方が壊れる"
     saveInboundRows(migrated);
     return migrated.map((r) => [...r]);
   }
-  const migratedFallback = migrateRowsToV1(fallback);
+  const migratedFallback = migrateRowsToV2(fallback);
   return migratedFallback.map((r) => [...r]);
 };
 
@@ -56,11 +62,11 @@ export const saveInboundRows = (rows: string[][]) => {
 export const loadPickupRows = (fallback: string[][]): string[][] => {
   const parsed = safeParseJson(localStorage.getItem(KEY_PICKUP_ROWS));
   if (isStringArrayArray(parsed)) {
-    const migrated = migrateRowsToV1(parsed);
+    const migrated = migrateRowsToV2(parsed);
     savePickupRows(migrated);
     return migrated.map((r) => [...r]);
   }
-  const migratedFallback = migrateRowsToV1(fallback);
+  const migratedFallback = migrateRowsToV2(fallback);
   return migratedFallback.map((r) => [...r]);
 };
 
@@ -74,7 +80,7 @@ export const loadInboundDraft = (): InboundDraft | null => {
   const obj = parsed as { inboundDate?: unknown; rows?: unknown };
   if (typeof obj.inboundDate !== "string") return null;
   if (!isStringArrayArray(obj.rows)) return null;
-  const migrated = migrateRowsToV1(obj.rows);
+  const migrated = migrateRowsToV2(obj.rows);
   // persist migration
   saveInboundDraft({ inboundDate: obj.inboundDate, rows: migrated });
   return { inboundDate: obj.inboundDate, rows: migrated.map((r) => [...r]) };

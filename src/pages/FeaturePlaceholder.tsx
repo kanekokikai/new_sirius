@@ -273,6 +273,10 @@ const FeaturePlaceholder = () => {
   const [wreckerTargetRow, setWreckerTargetRow] = useState<number | null>(null);
   const [wreckerInitial, setWreckerInitial] = useState<string>("");
 
+  const [orderStatusModalOpen, setOrderStatusModalOpen] = useState(false);
+  const [orderStatusTargetRow, setOrderStatusTargetRow] = useState<number | null>(null);
+  const [orderStatusInitial, setOrderStatusInitial] = useState<OrderStatusSelectable>("予約");
+
   const [driverModalOpen, setDriverModalOpen] = useState(false);
   const [driverTargetRow, setDriverTargetRow] = useState<number | null>(null);
   const [driverInitial, setDriverInitial] = useState<{ kind?: "選択無し" | "自社" | "外注" | "先方"; driverId?: string; outsourceId?: string }>({});
@@ -328,11 +332,44 @@ const FeaturePlaceholder = () => {
     return hh * 60 + mm;
   };
 
+  const COL = {
+    issue: 0, // 払出（ボタン）
+    status: 1, // 状態（予約/確定/払出済/キャンセル/破棄）
+    groupNo: 2, // 件数（グループ番号: UIで採番）
+    location: 3, // 場所
+    machine: 4, // 機械名
+    machineNo: 5, // No.
+    quantity: 6, // 数量
+    vehicle: 7, // 車輛
+    wrecker: 8, // ﾚｯｶｰ
+    driver: 9, // 運転手
+    customer: 10, // 会社名
+    site: 11, // 現場
+    time: 12, // 時間
+    note: 13, // 備考
+    hour: 14, // アワー
+    transportFee: 15 // 回送費
+  } as const;
+
+  type OrderStatus = "予約" | "確定" | "払出済" | "キャンセル" | "破棄";
+  type OrderStatusSelectable = Exclude<OrderStatus, "払出済">;
+  const orderStatusOptions: readonly OrderStatusSelectable[] = ["予約", "確定", "キャンセル", "破棄"] as const;
+
+  const statusToSymbolAndColor = (statusRaw: string): { symbol: string; color: string } => {
+    const status = (statusRaw ?? "").trim() as OrderStatus;
+    if (status === "予約") return { symbol: "▲", color: "#f59e0b" }; // yellow
+    if (status === "確定") return { symbol: "●", color: "#2563eb" }; // blue
+    if (status === "払出済") return { symbol: "■", color: "#16a34a" }; // green
+    if (status === "キャンセル") return { symbol: "×", color: "#7f1d1d" }; // blood red
+    if (status === "破棄") return { symbol: "×", color: "#0f172a" }; // black-ish
+    return { symbol: "", color: "#475569" };
+  };
+
   const isPdfGroupStartRow = (row?: string[]) => {
     if (!row) return false;
     // NOTE: 受注検索結果（PDF再現）は「場所」列をグループ開始の基準にする
     // （番号/連番は表示順にUI側で自動採番するため、ここでは参照しない）
-    return (row[2] ?? "").trim().length > 0;
+    return (row[COL.location] ?? "").trim().length > 0;
   };
 
   type OrdersPdfRowRef = { kind: "搬入" | "引取"; sourceRowIndex: number };
@@ -353,7 +390,7 @@ const FeaturePlaceholder = () => {
       const timeCell =
         rows
           .slice(start, end)
-          .map((r) => (r?.[11] ?? "").trim())
+          .map((r) => (r?.[COL.time] ?? "").trim())
           .find((x) => x.length > 0) ?? "";
 
       groups.push({
@@ -402,7 +439,11 @@ const FeaturePlaceholder = () => {
 
   const isInstructionNoteRow = (row: string[] | undefined): boolean => {
     if (!row) return false;
-    return (row[1] ?? "").trim() === "" && (row[2] ?? "").trim() === "" && (row[3] ?? "").trim().startsWith("※");
+    return (
+      (row[COL.groupNo] ?? "").trim() === "" &&
+      (row[COL.location] ?? "").trim() === "" &&
+      (row[COL.machine] ?? "").trim().startsWith("※")
+    );
   };
 
   const parseSiteFromCell = (value: string): { siteId?: string; siteName?: string } => {
@@ -455,24 +496,24 @@ const FeaturePlaceholder = () => {
     let groupEnd = groupStart + 1;
     while (groupEnd < shownRows.length && !isPdfGroupStartRow(shownRows[groupEnd])) groupEnd += 1;
 
-    const groupNo = String(shownRows[groupStart]?.[1] ?? "").trim();
-    const locationCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, 2);
-    const customerCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, 9);
-    const siteCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, 10);
-    const timeCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, 11);
-    const driverCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, 8);
+    const groupNo = String(shownRows[groupStart]?.[COL.groupNo] ?? "").trim();
+    const locationCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, COL.location);
+    const customerCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, COL.customer);
+    const siteCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, COL.site);
+    const timeCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, COL.time);
+    const driverCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, COL.driver);
 
     const items: Array<{ machineName: string; machineNo: string; quantity: string }> = [];
     for (let i = groupStart; i < groupEnd; i += 1) {
       const r = shownRows[i] ?? [];
       if (isInstructionNoteRow(r)) continue;
-      const machineName = String(r[3] ?? "").trim();
+      const machineName = String(r[COL.machine] ?? "").trim();
       if (!machineName) continue;
       if (machineName.startsWith("※")) continue;
       items.push({
         machineName,
-        machineNo: String(r[4] ?? "").trim(),
-        quantity: String(r[5] ?? "").trim()
+        machineNo: String(r[COL.machineNo] ?? "").trim(),
+        quantity: String(r[COL.quantity] ?? "").trim()
       });
     }
 
@@ -933,8 +974,8 @@ const FeaturePlaceholder = () => {
       };
 
       for (const g of groups) {
-        const customerCell = getFirstNonEmptyInGroup(g.startRowIndex, g.endRowIndex, 9);
-        const siteCell = getFirstNonEmptyInGroup(g.startRowIndex, g.endRowIndex, 10);
+        const customerCell = getFirstNonEmptyInGroup(g.startRowIndex, g.endRowIndex, COL.customer);
+        const siteCell = getFirstNonEmptyInGroup(g.startRowIndex, g.endRowIndex, COL.site);
         const normalizedCustomer = normalizeCustomerNameFromCell(customerCell);
         const normalizedSite = parseSiteFromCell(siteCell).siteName ?? String(siteCell ?? "").trim();
 
@@ -983,15 +1024,17 @@ const FeaturePlaceholder = () => {
     let groupNo = 0;
     return base.map((r) => {
       const row = [...(r ?? [])];
-      const isStart = (row[2] ?? "").trim().length > 0;
+      const isStart = (row[COL.location] ?? "").trim().length > 0;
       if (isStart) {
         groupNo += 1;
         // 払出列は「件数(=グループ)につき1つ」にしたいので、rowSpan のアンカーとして値を入れる
-        row[0] = "払出";
-        row[1] = String(groupNo); // 件数列
+        row[COL.issue] = "払出";
+        row[COL.groupNo] = String(groupNo); // 件数列
+        if (!String(row[COL.status] ?? "").trim()) row[COL.status] = "予約";
       } else {
-        row[0] = "";
-        row[1] = "";
+        row[COL.issue] = "";
+        row[COL.status] = "";
+        row[COL.groupNo] = "";
       }
       return row;
     });
@@ -1004,12 +1047,13 @@ const FeaturePlaceholder = () => {
     let groupNo = 0;
     return base.map((r) => {
       const row = [...(r ?? [])];
-      const isStart = (row[2] ?? "").trim().length > 0;
+      const isStart = (row[COL.location] ?? "").trim().length > 0;
       if (isStart) {
         groupNo += 1;
-        row[1] = String(groupNo);
+        row[COL.groupNo] = String(groupNo);
+        if (!String(row[COL.status] ?? "").trim()) row[COL.status] = "予約";
       } else {
-        row[1] = "";
+        row[COL.groupNo] = "";
       }
       return row;
     });
@@ -1021,13 +1065,29 @@ const FeaturePlaceholder = () => {
     setOrdersPdfEditingScope("draft");
     setOrdersPdfEditingKind("搬入");
 
-    if (colIndex === 2) {
+    if (colIndex === COL.status) {
+      const shownRows = inboundDraftShownRows;
+      const groupStart = getOrdersPdfGroupStartDisplayRow(shownRows, rowIndex);
+      const current = String(shownRows[groupStart]?.[COL.status] ?? "").trim() || "予約";
+      if (current === "払出済") {
+        showToast("払出済は伝票発行で自動設定されます", "warn", 2500);
+        return;
+      }
+      setOrderStatusTargetRow(groupStart);
+      setOrderStatusInitial(
+        (orderStatusOptions.includes(current as OrderStatusSelectable) ? (current as OrderStatusSelectable) : "予約") as OrderStatusSelectable
+      );
+      setOrderStatusModalOpen(true);
+      return;
+    }
+
+    if (colIndex === COL.location) {
       setLocationModalTargetRow(rowIndex);
       setLocationModalInitial(parseLocationCell(value ?? ""));
       setLocationModalOpen(true);
       return;
     }
-    if (colIndex === 3) {
+    if (colIndex === COL.machine) {
       if ((value ?? "").trim().startsWith("※")) {
         setInstructionNoteTargetRow(rowIndex);
         setInstructionNoteInitial(value ?? "");
@@ -1039,16 +1099,16 @@ const FeaturePlaceholder = () => {
       const nextRow = shownRows[rowIndex + 1];
       const nextRowInstructionNote =
         nextRow &&
-        (nextRow[1] ?? "").trim() === "" &&
-        (nextRow[2] ?? "").trim() === "" &&
-        (nextRow[3] ?? "").trim().startsWith("※")
-          ? (nextRow[3] ?? "")
+        (nextRow[COL.groupNo] ?? "").trim() === "" &&
+        (nextRow[COL.location] ?? "").trim() === "" &&
+        (nextRow[COL.machine] ?? "").trim().startsWith("※")
+          ? (nextRow[COL.machine] ?? "")
           : "";
       const parsed = parseMachineTypeFromCell(value);
       const linked = machineTypeByMachineNameMock[parsed.baseName];
       const inferredCategoryId = machineCategoryMasterMock.find((x) => x.name === parsed.baseName)?.id;
       setMachineTypeDisableAddProduct(!String(value ?? "").trim());
-      setMachineTypeInitialQuantity(String(shownRows[rowIndex]?.[5] ?? "").trim());
+      setMachineTypeInitialQuantity(String(shownRows[rowIndex]?.[COL.quantity] ?? "").trim());
       setMachineTypeTargetRow(rowIndex);
       setMachineTypeInitial({
         kindId: parsed.kindId ?? linked?.kindId,
@@ -1058,57 +1118,57 @@ const FeaturePlaceholder = () => {
       setMachineTypeModalOpen(true);
       return;
     }
-    if (colIndex === 4) {
+    if (colIndex === COL.machineNo) {
       setMachineNoTargetRow(rowIndex);
       setMachineNoInitial(value ?? "");
       setMachineNoModalOpen(true);
       return;
     }
-    if (colIndex === 5) {
+    if (colIndex === COL.quantity) {
       setQuantityTargetRow(rowIndex);
       setQuantityInitial(value ?? "");
       setQuantityModalOpen(true);
       return;
     }
-    if (colIndex === 6) {
+    if (colIndex === COL.vehicle) {
       setVehicleTargetRow(rowIndex);
       setVehicleInitial(value ?? "");
       setVehicleModalOpen(true);
       return;
     }
-    if (colIndex === 7) {
+    if (colIndex === COL.wrecker) {
       setWreckerTargetRow(rowIndex);
       setWreckerInitial(value ?? "");
       setWreckerModalOpen(true);
       return;
     }
-    if (colIndex === 8) {
+    if (colIndex === COL.driver) {
       const parsed = driverAssignParseFromCell(value ?? "");
       setDriverTargetRow(rowIndex);
       setDriverInitial(parsed);
       setDriverModalOpen(true);
       return;
     }
-    if (colIndex === 10) {
+    if (colIndex === COL.site) {
       const parsed = parseSiteFromCell(value ?? "");
       setSiteTargetRow(rowIndex);
       setSiteInitial(parsed);
       setSiteModalOpen(true);
       return;
     }
-    if (colIndex === 11) {
+    if (colIndex === COL.time) {
       setTimeTargetRow(rowIndex);
       setTimeInitial(value ?? "");
       setTimeModalOpen(true);
       return;
     }
-    if (colIndex === 12) {
+    if (colIndex === COL.note) {
       setFactoryNoteTargetRow(rowIndex);
       setFactoryNoteInitial(value ?? "");
       setFactoryNoteModalOpen(true);
       return;
     }
-    if (colIndex === 14) {
+    if (colIndex === COL.transportFee) {
       setTransportFeeTargetRow(rowIndex);
       setTransportFeeInitial(value ?? "");
       setTransportFeeModalOpen(true);
@@ -1158,8 +1218,9 @@ const FeaturePlaceholder = () => {
 
   const createInboundDraftRow = (companyName: string): string[] => {
     const row = Array.from({ length: inboundOrderSearchColumns.length }).map(() => "");
-    row[2] = "（未設定）";
-    row[9] = companyName.trim();
+    row[COL.location] = "（未設定）";
+    row[COL.customer] = companyName.trim();
+    row[COL.status] = "予約";
     return row;
   };
 
@@ -1180,7 +1241,7 @@ const FeaturePlaceholder = () => {
   };
 
   const parseFirstTimeCellMinutes = (rows: string[][]) => {
-    const cell = rows.map((r) => String(r?.[11] ?? "").trim()).find((x) => x.length > 0) ?? "";
+    const cell = rows.map((r) => String(r?.[COL.time] ?? "").trim()).find((x) => x.length > 0) ?? "";
     return parseStartTimeMinutes(cell);
   };
 
@@ -1191,8 +1252,8 @@ const FeaturePlaceholder = () => {
     const siteId = ordersFilter.siteId.trim();
     if (!customerName && !customerId && !siteName && !siteId) return true;
 
-    const customerCell = draftRows.map((r) => String(r?.[9] ?? "").trim()).find((x) => x.length > 0) ?? "";
-    const siteCell = draftRows.map((r) => String(r?.[10] ?? "").trim()).find((x) => x.length > 0) ?? "";
+    const customerCell = draftRows.map((r) => String(r?.[COL.customer] ?? "").trim()).find((x) => x.length > 0) ?? "";
+    const siteCell = draftRows.map((r) => String(r?.[COL.site] ?? "").trim()).find((x) => x.length > 0) ?? "";
     const normalizedCustomer = normalizeCustomerNameFromCell(customerCell);
     const normalizedSite = parseSiteFromCell(siteCell).siteName ?? String(siteCell ?? "").trim();
 
@@ -1316,7 +1377,18 @@ const FeaturePlaceholder = () => {
           rows={ordersPdfShownRows}
           tableClassName={shouldShowPickupOrdersPdfResult ? "inbound-pdf-table--pickup" : undefined}
           renderCell={({ rowIndex, colIndex, row, value }) => {
-            if (colIndex !== 0) return row[colIndex];
+            if (colIndex === COL.status) {
+              const { symbol, color } = statusToSymbolAndColor(String(value ?? ""));
+              return (
+                <span
+                  title={String(value ?? "").trim()}
+                  style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "100%", color, fontWeight: 900 }}
+                >
+                  {symbol}
+                </span>
+              );
+            }
+            if (colIndex !== COL.issue) return row[colIndex];
             // rowSpan のアンカー（ordersPdfShownRows で "払出" を入れている）
             if (!String(value ?? "").trim()) return "";
 
@@ -1326,17 +1398,17 @@ const FeaturePlaceholder = () => {
             let groupEnd = groupStart + 1;
             while (groupEnd < shownRows.length && !isPdfGroupStartRow(shownRows[groupEnd])) groupEnd += 1;
 
-            const driverCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, 8);
+            const driverCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, COL.driver);
             const hasDriver = String(driverCell ?? "").trim().length > 0;
 
             const allProductsHaveNo = (() => {
               for (let i = groupStart; i < groupEnd; i += 1) {
                 const r = shownRows[i] ?? [];
                 if (isInstructionNoteRow(r)) continue;
-                const machine = String(r[3] ?? "").trim();
+                const machine = String(r[COL.machine] ?? "").trim();
                 if (!machine) continue;
                 if (machine.startsWith("※")) continue;
-                const no = String(r[4] ?? "").trim();
+                const no = String(r[COL.machineNo] ?? "").trim();
                 if (!no) return false;
               }
               return true;
@@ -1399,9 +1471,23 @@ const FeaturePlaceholder = () => {
           }}
           colWidths={inboundOrderSearchColWidths}
           // 払出/件数/場所 + 右側の情報列はグループ内で縦結合
-          mergeColumnIndices={[0, 1, 2, 6, 7, 8, 9, 10, 11, 12, 13, 14]}
+          mergeColumnIndices={[
+            COL.issue,
+            COL.status,
+            COL.groupNo,
+            COL.location,
+            COL.vehicle,
+            COL.wrecker,
+            COL.driver,
+            COL.customer,
+            COL.site,
+            COL.time,
+            COL.note,
+            COL.hour,
+            COL.transportFee
+          ]}
           mergeBlankCellsWithinGroup
-          groupStartColumnIndices={[2]}
+          groupStartColumnIndices={[COL.location]}
           onCellDoubleClick={({ rowIndex, colIndex, value }) => {
             setOrdersPdfEditingScope("results");
             if (shouldShowMixedOrdersPdfResult) {
@@ -1411,15 +1497,30 @@ const FeaturePlaceholder = () => {
               setOrdersPdfEditingKind(ordersPdfKindLabel);
             }
             // 列ごとにデモ編集モーダルを出し分け
-            // [0]払出 [1]件数 [2]場所 [3]機械名 [4]No. [5]数量 [6]車輛
-            if (colIndex === 2) {
+            // [0]払出 [1]状態 [2]件数 [3]場所 [4]機械名 [5]No. [6]数量 [7]車輛
+            if (colIndex === COL.status) {
+              const shownRows = ordersPdfShownRows;
+              const groupStart = getOrdersPdfGroupStartDisplayRow(shownRows, rowIndex);
+              const current = String(shownRows[groupStart]?.[COL.status] ?? "").trim() || "予約";
+              if (current === "払出済") {
+                showToast("払出済は伝票発行で自動設定されます", "warn", 2500);
+                return;
+              }
+              setOrderStatusTargetRow(groupStart);
+              setOrderStatusInitial(
+                (orderStatusOptions.includes(current as OrderStatusSelectable) ? (current as OrderStatusSelectable) : "予約") as OrderStatusSelectable
+              );
+              setOrderStatusModalOpen(true);
+              return;
+            }
+            if (colIndex === COL.location) {
               if (!value.trim()) return;
               setLocationModalTargetRow(rowIndex);
               setLocationModalInitial(parseLocationCell(value));
               setLocationModalOpen(true);
               return;
             }
-            if (colIndex === 3) {
+            if (colIndex === COL.machine) {
               // 機械名列のうち「指示備考」行（例: 先頭が※）は、種類/種別変更ではなく指示備考編集モーダル
               if ((value ?? "").trim().startsWith("※")) {
                 setInstructionNoteTargetRow(rowIndex);
@@ -1442,14 +1543,14 @@ const FeaturePlaceholder = () => {
 
                 const inTableNames: string[] = [];
               for (let i = groupStart; i < groupEnd; i += 1) {
-                const cell = String(shownRows[i]?.[3] ?? "").trim();
+                const cell = String(shownRows[i]?.[COL.machine] ?? "").trim();
                   if (!cell) continue;
                   if (cell.startsWith("※")) continue;
                   inTableNames.push(cell);
                 }
 
-              const customerCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, 9);
-              const siteCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, 10);
+              const customerCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, COL.customer);
+              const siteCell = getOrdersPdfMergedValueInGroup(shownRows, groupStart, COL.site);
                 const customerName = normalizeCustomerNameFromCell(customerCell);
                 const siteName = parseSiteFromCell(siteCell).siteName ?? String(siteCell ?? "").trim();
 
@@ -1486,7 +1587,7 @@ const FeaturePlaceholder = () => {
                 const nextRow = shownRows[rowIndex + 1];
                 const isNextRowInSameGroup = nextRow && !isPdfGroupStartRow(nextRow);
               const initialNote =
-                isNextRowInSameGroup && isInstructionNoteRow(nextRow) ? String(nextRow?.[3] ?? "").trim() : "";
+                isNextRowInSameGroup && isInstructionNoteRow(nextRow) ? String(nextRow?.[COL.machine] ?? "").trim() : "";
 
                 setPickupOrdersMachineTargetRow(rowIndex);
                 setPickupOrdersMachineInitialSelectedIds(initialSelectedIds);
@@ -1508,14 +1609,17 @@ const FeaturePlaceholder = () => {
                   : pickupRows;
               const nextRow = shownRows[rowIndex + 1];
               const nextRowInstructionNote =
-                nextRow && (nextRow[1] ?? "").trim() === "" && (nextRow[2] ?? "").trim() === "" && (nextRow[3] ?? "").trim().startsWith("※")
-                  ? (nextRow[3] ?? "")
+                nextRow &&
+                (nextRow[COL.groupNo] ?? "").trim() === "" &&
+                (nextRow[COL.location] ?? "").trim() === "" &&
+                (nextRow[COL.machine] ?? "").trim().startsWith("※")
+                  ? (nextRow[COL.machine] ?? "")
                   : "";
               const parsed = parseMachineTypeFromCell(value);
               const linked = machineTypeByMachineNameMock[parsed.baseName];
               const inferredCategoryId = machineCategoryMasterMock.find((x) => x.name === parsed.baseName)?.id;
               setMachineTypeDisableAddProduct(!String(value ?? "").trim());
-              setMachineTypeInitialQuantity(String(shownRows[rowIndex]?.[5] ?? "").trim());
+              setMachineTypeInitialQuantity(String(shownRows[rowIndex]?.[COL.quantity] ?? "").trim());
               setMachineTypeTargetRow(rowIndex);
               setMachineTypeInitial({
                 kindId: parsed.kindId ?? linked?.kindId,
@@ -1525,32 +1629,32 @@ const FeaturePlaceholder = () => {
               setMachineTypeModalOpen(true);
               return;
             }
-            if (colIndex === 4) {
+            if (colIndex === COL.machineNo) {
               setMachineNoTargetRow(rowIndex);
               setMachineNoInitial(value ?? "");
               setMachineNoModalOpen(true);
               return;
             }
-            if (colIndex === 5) {
+            if (colIndex === COL.quantity) {
               setQuantityTargetRow(rowIndex);
               setQuantityInitial(value ?? "");
               setQuantityModalOpen(true);
               return;
             }
-            if (colIndex === 6) {
+            if (colIndex === COL.vehicle) {
               setVehicleTargetRow(rowIndex);
               setVehicleInitial(value ?? "");
               setVehicleModalOpen(true);
               return;
             }
-            if (colIndex === 7) {
+            if (colIndex === COL.wrecker) {
               // ﾚｯｶｰ
               setWreckerTargetRow(rowIndex);
               setWreckerInitial(value ?? "");
               setWreckerModalOpen(true);
               return;
             }
-            if (colIndex === 8) {
+            if (colIndex === COL.driver) {
               // 運転手
               const parsed = driverAssignParseFromCell(value ?? "");
               setDriverTargetRow(rowIndex);
@@ -1558,7 +1662,7 @@ const FeaturePlaceholder = () => {
               setDriverModalOpen(true);
               return;
             }
-            if (colIndex === 10) {
+            if (colIndex === COL.site) {
               // 現場
               const parsed = parseSiteFromCell(value ?? "");
               setSiteTargetRow(rowIndex);
@@ -1566,21 +1670,21 @@ const FeaturePlaceholder = () => {
               setSiteModalOpen(true);
               return;
             }
-            if (colIndex === 11) {
+            if (colIndex === COL.time) {
               // 時間
               setTimeTargetRow(rowIndex);
               setTimeInitial(value ?? "");
               setTimeModalOpen(true);
               return;
             }
-            if (colIndex === 12) {
+            if (colIndex === COL.note) {
               // 備考（工場備考）
               setFactoryNoteTargetRow(rowIndex);
               setFactoryNoteInitial(value ?? "");
               setFactoryNoteModalOpen(true);
               return;
             }
-            if (colIndex === 14) {
+            if (colIndex === COL.transportFee) {
               // 回送費
               setTransportFeeTargetRow(rowIndex);
               setTransportFeeInitial(value ?? "");
@@ -2296,6 +2400,11 @@ const FeaturePlaceholder = () => {
                     type="button"
                     onClick={() => {
                       setIssueSlipConfirmOpen(false);
+                      if (issueSlipTargetRow != null) {
+                        const shownRows = ordersPdfShownRows;
+                        const groupStart = getOrdersPdfGroupStartDisplayRow(shownRows, issueSlipTargetRow);
+                        setOrdersPdfCellByScope(groupStart, COL.status, "払出済");
+                      }
                       showToast("✓ 伝票を発行しました（デモ）", "success", 2000);
                     }}
                   >
@@ -2336,7 +2445,7 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(next) => {
               if (locationModalTargetRow == null) return;
-              setOrdersPdfCellByScope(locationModalTargetRow, 2, `${next.name}（${next.id}）`);
+              setOrdersPdfCellByScope(locationModalTargetRow, COL.location, `${next.name}（${next.id}）`);
               setLocationModalOpen(false);
               setLocationModalTargetRow(null);
               setLocationModalInitial({});
@@ -2360,9 +2469,9 @@ const FeaturePlaceholder = () => {
             onConfirm={(nextValue) => {
               if (instructionNoteTargetRow == null) return;
               // 指示備考は「商品ではない」ため、機械名セル（2列目）だけを書き換える
-              setOrdersPdfCellByScope(instructionNoteTargetRow, 3, nextValue);
+              setOrdersPdfCellByScope(instructionNoteTargetRow, COL.machine, nextValue);
               // 指示備考行は数量を持たない
-              setOrdersPdfCellByScope(instructionNoteTargetRow, 5, "");
+              setOrdersPdfCellByScope(instructionNoteTargetRow, COL.quantity, "");
               setInstructionNoteModalOpen(false);
               setInstructionNoteTargetRow(null);
               setInstructionNoteInitial("");
@@ -2543,15 +2652,15 @@ const FeaturePlaceholder = () => {
               if (machineTypeTargetRow == null) return;
               const productRow = Array.from({ length: inboundOrderSearchColumns.length }).map(() => "");
               // 要件: 表へ反映される機械名は「種別名」だけ
-              productRow[3] = next.categoryName || "（未選択）";
-              productRow[5] = next.quantity;
+              productRow[COL.machine] = next.categoryName || "（未選択）";
+              productRow[COL.quantity] = next.quantity;
 
               const noteText = normalizeInstructionNoteForCell(next.instructionNote);
               const rowsToInsert = [productRow];
               if (noteText) {
                 const noteRow = Array.from({ length: inboundOrderSearchColumns.length }).map(() => "");
-                noteRow[3] = noteText;
-                noteRow[5] = ""; // 指示備考は数量なし
+                noteRow[COL.machine] = noteText;
+                noteRow[COL.quantity] = ""; // 指示備考は数量なし
                 rowsToInsert.push(noteRow);
               }
 
@@ -2578,8 +2687,8 @@ const FeaturePlaceholder = () => {
             onConfirm={(next) => {
               if (machineTypeTargetRow == null) return;
               // 要件: 表へ反映される機械名は「種別名」だけ
-              setOrdersPdfCellByScope(machineTypeTargetRow, 3, next.categoryName || "（未選択）");
-              setOrdersPdfCellByScope(machineTypeTargetRow, 5, next.quantity);
+              setOrdersPdfCellByScope(machineTypeTargetRow, COL.machine, next.categoryName || "（未選択）");
+              setOrdersPdfCellByScope(machineTypeTargetRow, COL.quantity, next.quantity);
 
               const noteText = normalizeInstructionNoteForCell(next.instructionNote);
               if (noteText) {
@@ -2593,19 +2702,15 @@ const FeaturePlaceholder = () => {
                         ? inboundRows
                         : pickupRows;
                 const nextRow = shownRows[machineTypeTargetRow + 1];
-                const hasNoteRowDirectlyBelow =
-                  nextRow &&
-                  (nextRow[0] ?? "").trim() === "" &&
-                  (nextRow[1] ?? "").trim() === "" &&
-                  (nextRow[2] ?? "").trim().startsWith("※");
+                const hasNoteRowDirectlyBelow = isInstructionNoteRow(nextRow);
 
                 if (hasNoteRowDirectlyBelow) {
-                  setOrdersPdfCellByScope(machineTypeTargetRow + 1, 3, noteText);
-                  setOrdersPdfCellByScope(machineTypeTargetRow + 1, 5, ""); // 数量なし
+                  setOrdersPdfCellByScope(machineTypeTargetRow + 1, COL.machine, noteText);
+                  setOrdersPdfCellByScope(machineTypeTargetRow + 1, COL.quantity, ""); // 数量なし
                 } else {
                   const noteRow = Array.from({ length: inboundOrderSearchColumns.length }).map(() => "");
-                  noteRow[3] = noteText;
-                  noteRow[5] = ""; // 指示備考は数量なし
+                  noteRow[COL.machine] = noteText;
+                  noteRow[COL.quantity] = ""; // 指示備考は数量なし
                   insertOrdersPdfRowsAfterDisplayRowByScope(machineTypeTargetRow, [noteRow]);
                 }
               }
@@ -2636,10 +2741,37 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (machineNoTargetRow == null) return;
-              setOrdersPdfCellByScope(machineNoTargetRow, 4, nextValue);
+              setOrdersPdfCellByScope(machineNoTargetRow, COL.machineNo, nextValue);
               setMachineNoModalOpen(false);
               setMachineNoTargetRow(null);
               setMachineNoInitial("");
+            }}
+          />
+        )}
+        {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && (
+          <SimpleValueEditModal
+            open={orderStatusModalOpen}
+            title="状態 変更（デモ）"
+            description="状態セルのダブルクリックで開くデモモーダルです。"
+            mode="select"
+            options={orderStatusOptions}
+            initialValue={orderStatusInitial}
+            onOrderDetail={() => {
+              const rowIndex = orderStatusTargetRow;
+              if (rowIndex == null) return;
+              navigateToInboundOrderDetail({ scope: ordersPdfEditingScope, kind: ordersPdfEditingKind, rowIndex });
+            }}
+            onClose={() => {
+              setOrderStatusModalOpen(false);
+              setOrderStatusTargetRow(null);
+              setOrderStatusInitial("予約");
+            }}
+            onConfirm={(nextValue) => {
+              if (orderStatusTargetRow == null) return;
+              setOrdersPdfCellByScope(orderStatusTargetRow, COL.status, nextValue);
+              setOrderStatusModalOpen(false);
+              setOrderStatusTargetRow(null);
+              setOrderStatusInitial("予約");
             }}
           />
         )}
@@ -2663,7 +2795,7 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (quantityTargetRow == null) return;
-              setOrdersPdfCellByScope(quantityTargetRow, 5, nextValue);
+              setOrdersPdfCellByScope(quantityTargetRow, COL.quantity, nextValue);
               setQuantityModalOpen(false);
               setQuantityTargetRow(null);
               setQuantityInitial("");
@@ -2687,7 +2819,7 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (vehicleTargetRow == null) return;
-              setOrdersPdfCellByScope(vehicleTargetRow, 6, nextValue);
+              setOrdersPdfCellByScope(vehicleTargetRow, COL.vehicle, nextValue);
               setVehicleModalOpen(false);
               setVehicleTargetRow(null);
               setVehicleInitial("");
@@ -2715,7 +2847,7 @@ const FeaturePlaceholder = () => {
             onConfirm={(nextValue) => {
               if (wreckerTargetRow == null) return;
               // 「選択無し」は空欄にする
-              setOrdersPdfCellByScope(wreckerTargetRow, 7, nextValue === "選択無し" ? "" : nextValue);
+              setOrdersPdfCellByScope(wreckerTargetRow, COL.wrecker, nextValue === "選択無し" ? "" : nextValue);
               setWreckerModalOpen(false);
               setWreckerTargetRow(null);
               setWreckerInitial("");
@@ -2742,14 +2874,14 @@ const FeaturePlaceholder = () => {
               if (driverTargetRow == null) return;
               const lines: string[] = [];
               if (next.kind === "選択無し") {
-                setOrdersPdfCellByScope(driverTargetRow, 8, "");
+                setOrdersPdfCellByScope(driverTargetRow, COL.driver, "");
               } else if (next.kind === "先方") {
-                setOrdersPdfCellByScope(driverTargetRow, 8, "先方");
+                setOrdersPdfCellByScope(driverTargetRow, COL.driver, "先方");
               } else {
                 lines.push(next.kind);
                 if (next.driverId) lines.push(`運転手ID:${next.driverId}`);
                 if (next.outsourceId) lines.push(`外注ID:${next.outsourceId}`);
-                setOrdersPdfCellByScope(driverTargetRow, 8, lines.join("\n"));
+                setOrdersPdfCellByScope(driverTargetRow, COL.driver, lines.join("\n"));
               }
               setDriverModalOpen(false);
               setDriverTargetRow(null);
@@ -2776,7 +2908,7 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(next) => {
               if (siteTargetRow == null) return;
-              setOrdersPdfCellByScope(siteTargetRow, 10, `${next.siteName}（${next.siteId}）`);
+              setOrdersPdfCellByScope(siteTargetRow, COL.site, `${next.siteName}（${next.siteId}）`);
               setSiteModalOpen(false);
               setSiteTargetRow(null);
               setSiteInitial({});
@@ -2854,7 +2986,7 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (timeTargetRow == null) return;
-              setOrdersPdfCellByScope(timeTargetRow, 11, nextValue);
+              setOrdersPdfCellByScope(timeTargetRow, COL.time, nextValue);
               setTimeModalOpen(false);
               setTimeTargetRow(null);
               setTimeInitial("");
@@ -2877,7 +3009,7 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (factoryNoteTargetRow == null) return;
-              setOrdersPdfCellByScope(factoryNoteTargetRow, 12, nextValue);
+              setOrdersPdfCellByScope(factoryNoteTargetRow, COL.note, nextValue);
               setFactoryNoteModalOpen(false);
               setFactoryNoteTargetRow(null);
               setFactoryNoteInitial("");
@@ -2900,7 +3032,7 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(nextValue) => {
               if (transportFeeTargetRow == null) return;
-              setOrdersPdfCellByScope(transportFeeTargetRow, 14, nextValue);
+              setOrdersPdfCellByScope(transportFeeTargetRow, COL.transportFee, nextValue);
               setTransportFeeModalOpen(false);
               setTransportFeeTargetRow(null);
               setTransportFeeInitial("");
