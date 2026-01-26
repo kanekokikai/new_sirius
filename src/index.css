@@ -569,6 +569,13 @@ table {
   overflow: visible;
   text-overflow: clip;
 }
+
+/* 運転手セル（改行/自由入力を表示できるようにする） */
+.inbound-pdf-table td[data-col="9"] {
+  white-space: pre-wrap;
+  overflow: visible;
+  text-overflow: clip;
+}
 .inbound-pdf-table td[data-col="1"],
 .inbound-pdf-table td[data-col="2"],
 .inbound-pdf-table td[data-col="5"],

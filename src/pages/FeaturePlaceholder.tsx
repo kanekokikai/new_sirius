@@ -479,7 +479,11 @@ const FeaturePlaceholder = () => {
 
   const [driverModalOpen, setDriverModalOpen] = useState(false);
   const [driverTargetRow, setDriverTargetRow] = useState<number | null>(null);
-  const [driverInitial, setDriverInitial] = useState<{ kind?: "選択無し" | "自社" | "外注" | "先方"; driverId?: string; outsourceId?: string }>({});
+  const [driverInitial, setDriverInitial] = useState<{
+    kind?: "選択無し" | "自社" | "外注" | "先方";
+    driverName?: string;
+    id?: string;
+  }>({});
 
   const [siteModalOpen, setSiteModalOpen] = useState(false);
   const [siteTargetRow, setSiteTargetRow] = useState<number | null>(null);
@@ -1592,7 +1596,11 @@ const FeaturePlaceholder = () => {
     if (colIndex === COL.driver) {
       const parsed = driverAssignParseFromCell(value ?? "");
       setDriverTargetRow(rowIndex);
-      setDriverInitial(parsed);
+      setDriverInitial({
+        kind: parsed.kind ?? "選択無し",
+        driverName: String(parsed.driverName ?? "").trim(),
+        id: String(parsed.id ?? "").trim()
+      });
       setDriverModalOpen(true);
       return;
     }
@@ -1709,7 +1717,11 @@ const FeaturePlaceholder = () => {
     if (colIndex === COL.driver) {
       const parsed = driverAssignParseFromCell(value ?? "");
       setDriverTargetRow(rowIndex);
-      setDriverInitial(parsed);
+      setDriverInitial({
+        kind: parsed.kind ?? "選択無し",
+        driverName: String(parsed.driverName ?? "").trim(),
+        id: String(parsed.id ?? "").trim()
+      });
       setDriverModalOpen(true);
       return;
     }
@@ -2342,7 +2354,11 @@ const FeaturePlaceholder = () => {
               // 運転手
               const parsed = driverAssignParseFromCell(value ?? "");
               setDriverTargetRow(rowIndex);
-              setDriverInitial(parsed);
+              setDriverInitial({
+                kind: parsed.kind ?? "選択無し",
+                driverName: String(parsed.driverName ?? "").trim(),
+                id: String(parsed.id ?? "").trim()
+              });
               setDriverModalOpen(true);
               return;
             }
@@ -3667,8 +3683,8 @@ const FeaturePlaceholder = () => {
           <DriverAssignModal
             open={driverModalOpen}
             initialKind={driverInitial.kind}
-            initialDriverId={driverInitial.driverId}
-            initialOutsourceId={driverInitial.outsourceId}
+            initialDriverName={driverInitial.driverName}
+            initialId={driverInitial.id}
             onOrderDetail={() => {
               const rowIndex = driverTargetRow;
               if (rowIndex == null) return;
@@ -3681,17 +3697,8 @@ const FeaturePlaceholder = () => {
             }}
             onConfirm={(next) => {
               if (driverTargetRow == null) return;
-              const lines: string[] = [];
-              if (next.kind === "選択無し") {
-                setOrdersPdfCellByScope(driverTargetRow, COL.driver, "");
-              } else if (next.kind === "先方") {
-                setOrdersPdfCellByScope(driverTargetRow, COL.driver, "先方");
-              } else {
-                lines.push(next.kind);
-                if (next.driverId) lines.push(`運転手ID:${next.driverId}`);
-                if (next.outsourceId) lines.push(`外注ID:${next.outsourceId}`);
-                setOrdersPdfCellByScope(driverTargetRow, COL.driver, lines.join("\n"));
-              }
+              // 表（運転手セル）は「運転手名のみ」表示（区分/IDが未入力でもOK）
+              setOrdersPdfCellByScope(driverTargetRow, COL.driver, next.driverName.trim());
               setDriverModalOpen(false);
               setDriverTargetRow(null);
               setDriverInitial({});
