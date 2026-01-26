@@ -3,9 +3,15 @@ export type InboundDraft = {
   rows: string[][];
 };
 
+export type PickupDraft = {
+  pickupDate: string; // yyyy-mm-dd (demo)
+  rows: string[][];
+};
+
 const KEY_INBOUND_ROWS = "demo.ordersPdf.inboundRows.v2";
 const KEY_PICKUP_ROWS = "demo.ordersPdf.pickupRows.v2";
 const KEY_INBOUND_DRAFT = "demo.ordersPdf.inboundDraft.v2";
+const KEY_PICKUP_DRAFT = "demo.ordersPdf.pickupDraft.v2";
 
 const TARGET_COLS = 16;
 
@@ -15,16 +21,49 @@ const migrateRowToV2 = (row: string[]): string[] => {
   if (row.length === 15) {
     // v1: [0]払出 [1]件数 [2]場所 [3]機械名 [4]No [5]数量 [6]車輛 [7]ﾚｯｶｰ [8]運転手 [9]会社名 [10]現場 [11]時間 [12]備考 [13]アワー [14]回送費
     // v2: [0]払出 [1]状態 [2]件数 [3]場所 ...
-    return [row[0] ?? "", "", row[1] ?? "", row[2] ?? "", row[3] ?? "", row[4] ?? "", row[5] ?? "", row[6] ?? "", row[7] ?? "", row[8] ?? "", row[9] ?? "", row[10] ?? "", row[11] ?? "", row[12] ?? "", row[13] ?? "", row[14] ?? ""];
+    return [
+      row[0] ?? "",
+      "",
+      row[1] ?? "",
+      row[2] ?? "",
+      row[3] ?? "",
+      row[4] ?? "",
+      row[5] ?? "",
+      row[6] ?? "",
+      row[7] ?? "",
+      row[8] ?? "",
+      row[9] ?? "",
+      row[10] ?? "",
+      row[11] ?? "",
+      row[12] ?? "",
+      row[13] ?? "",
+      row[14] ?? ""
+    ];
   }
   if (row.length === 14) {
     // v0(old): [0]空欄 [1]場所 [2]機械名 [3]No [4]数量 [5]車輛 [6]ﾚｯｶｰ [7]運転手 [8]会社名 [9]現場 [10]時間 [11]備考 [12]アワー [13]回送費
     // v2: [0]払出 [1]状態 [2]件数 [3]場所 ...
-    return ["", "", "", row[1] ?? "", row[2] ?? "", row[3] ?? "", row[4] ?? "", row[5] ?? "", row[6] ?? "", row[7] ?? "", row[8] ?? "", row[9] ?? "", row[10] ?? "", row[11] ?? "", row[12] ?? "", row[13] ?? ""];
+    return [
+      "",
+      "",
+      "",
+      row[1] ?? "",
+      row[2] ?? "",
+      row[3] ?? "",
+      row[4] ?? "",
+      row[5] ?? "",
+      row[6] ?? "",
+      row[7] ?? "",
+      row[8] ?? "",
+      row[9] ?? "",
+      row[10] ?? "",
+      row[11] ?? "",
+      row[12] ?? "",
+      row[13] ?? ""
+    ];
   }
   // best-effort: pad/truncate
-  const next = Array.from({ length: TARGET_COLS }).map((_, idx) => String(row[idx] ?? ""));
-  return next;
+  return Array.from({ length: TARGET_COLS }).map((_, idx) => String(row[idx] ?? ""));
 };
 
 const migrateRowsToV2 = (rows: string[][]): string[][] => rows.map((r) => migrateRowToV2(r));
@@ -92,5 +131,25 @@ export const saveInboundDraft = (draft: InboundDraft | null) => {
     return;
   }
   localStorage.setItem(KEY_INBOUND_DRAFT, JSON.stringify(draft));
+};
+
+export const loadPickupDraft = (): PickupDraft | null => {
+  const parsed = safeParseJson(localStorage.getItem(KEY_PICKUP_DRAFT));
+  if (!parsed || typeof parsed !== "object") return null;
+  const obj = parsed as { pickupDate?: unknown; rows?: unknown };
+  if (typeof obj.pickupDate !== "string") return null;
+  if (!isStringArrayArray(obj.rows)) return null;
+  const migrated = migrateRowsToV2(obj.rows);
+  // persist migration
+  savePickupDraft({ pickupDate: obj.pickupDate, rows: migrated });
+  return { pickupDate: obj.pickupDate, rows: migrated.map((r) => [...r]) };
+};
+
+export const savePickupDraft = (draft: PickupDraft | null) => {
+  if (!draft) {
+    localStorage.removeItem(KEY_PICKUP_DRAFT);
+    return;
+  }
+  localStorage.setItem(KEY_PICKUP_DRAFT, JSON.stringify(draft));
 };
 

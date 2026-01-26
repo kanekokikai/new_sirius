@@ -480,6 +480,28 @@ table {
   text-align: center;
   white-space: nowrap;
 }
+.inbound-pdf-table__sort-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.inbound-pdf-table__sort-button:hover {
+  text-decoration: underline;
+}
+.inbound-pdf-table__sort-indicator {
+  font-size: 11px;
+  opacity: 0.8;
+}
 .inbound-pdf-table td {
   background: #fff;
   white-space: nowrap;

@@ -11,7 +11,18 @@ import {
   inboundOrderSearchColWidths
 } from "../data/inboundOrderSearchMock";
 import { pickupOrderSearchRawRows } from "../data/pickupOrderSearchPdfMock";
-import { loadInboundDraft, loadInboundRows, loadPickupRows, saveInboundDraft, saveInboundRows, savePickupRows, InboundDraft } from "../data/ordersLocalDb";
+import {
+  loadInboundDraft,
+  loadInboundRows,
+  loadPickupDraft,
+  loadPickupRows,
+  saveInboundDraft,
+  saveInboundRows,
+  savePickupDraft,
+  savePickupRows,
+  InboundDraft,
+  PickupDraft
+} from "../data/ordersLocalDb";
 import { InboundPdfTable } from "../components/InboundPdfTable";
 import { LocationChangeModal } from "../components/LocationChangeModal";
 import { locationMasterMock } from "../data/locationMasterMock";
@@ -84,6 +95,49 @@ const initialOrdersFilter: OrdersFilter = {
   arrangementPartnerId: "",
   transport: "all",
   transportAssigneeCode: ""
+};
+
+type OrdersSearchPersistedState = {
+  v: 1;
+  filter: OrdersFilter;
+  showResults: boolean;
+  savedAt: number;
+};
+
+const ORDERS_SEARCH_STORAGE_PREFIX = "demo.orders.searchState.";
+
+const normalizeOrdersFilter = (input: unknown): OrdersFilter => {
+  const obj = (input ?? {}) as Partial<OrdersFilter>;
+  return {
+    ...initialOrdersFilter,
+    ...obj,
+    kinds: Array.isArray(obj.kinds) ? obj.kinds.filter((x) => typeof x === "string") : []
+  };
+};
+
+const loadOrdersSearchState = (dept: string): OrdersSearchPersistedState | null => {
+  try {
+    const raw = sessionStorage.getItem(`${ORDERS_SEARCH_STORAGE_PREFIX}${dept}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<OrdersSearchPersistedState>;
+    if (parsed.v !== 1) return null;
+    return {
+      v: 1,
+      filter: normalizeOrdersFilter(parsed.filter),
+      showResults: Boolean(parsed.showResults),
+      savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : Date.now()
+    };
+  } catch {
+    return null;
+  }
+};
+
+const saveOrdersSearchState = (dept: string, next: OrdersSearchPersistedState) => {
+  try {
+    sessionStorage.setItem(`${ORDERS_SEARCH_STORAGE_PREFIX}${dept}`, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
 };
 
 type PickupOrderSearchForm = {
@@ -179,10 +233,14 @@ const FeaturePlaceholder = () => {
   const [pickupRows, setPickupRows] = useState<string[][]>(() => loadPickupRows(pickupOrderSearchRawRows));
   const [ordersPdfEditingKind, setOrdersPdfEditingKind] = useState<"搬入" | "引取">("搬入");
   const [ordersPdfEditingScope, setOrdersPdfEditingScope] = useState<"results" | "draft">("results");
+  const [ordersPdfSort, setOrdersPdfSort] = useState<{ colIndex: number; direction: "asc" | "desc" } | null>(null);
 
   // 新規登録エリア（搬入のデモ用バッファ）: ここに入力→ドラッグ&ドロップで検索結果へ反映
   const [inboundDraft, setInboundDraft] = useState<InboundDraft | null>(() => loadInboundDraft());
-  const [isDraggingInboundDraft, setIsDraggingInboundDraft] = useState(false);
+  // 新規登録エリア（引取のデモ用バッファ）
+  const [pickupDraft, setPickupDraft] = useState<PickupDraft | null>(() => loadPickupDraft());
+  // ドラッグ中の新規登録エリア種別（表へドロップで追加）
+  const [draggingDraftKind, setDraggingDraftKind] = useState<"搬入" | "引取" | null>(null);
   const [isDragOverOrdersTable, setIsDragOverOrdersTable] = useState(false);
 
   // トースト（簡易）
@@ -192,12 +250,19 @@ const FeaturePlaceholder = () => {
   // 追加アニメ/ハイライト対象（sourceRowIndex のレンジ）
   const [inboundInsertAnimRange, setInboundInsertAnimRange] = useState<{ start: number; end: number } | null>(null);
   const [inboundHighlightRange, setInboundHighlightRange] = useState<{ start: number; end: number } | null>(null);
+  const [pickupInsertAnimRange, setPickupInsertAnimRange] = useState<{ start: number; end: number } | null>(null);
+  const [pickupHighlightRange, setPickupHighlightRange] = useState<{ start: number; end: number } | null>(null);
 
   // 「+ 新規受注登録」モーダル
   const [newInboundModalOpen, setNewInboundModalOpen] = useState(false);
   const [newInboundDate, setNewInboundDate] = useState("");
   const [newInboundCompanyName, setNewInboundCompanyName] = useState("");
   const [newInboundErrors, setNewInboundErrors] = useState<{ inboundDate?: string; companyName?: string }>({});
+
+  const [newPickupModalOpen, setNewPickupModalOpen] = useState(false);
+  const [newPickupDate, setNewPickupDate] = useState("");
+  const [newPickupCompanyName, setNewPickupCompanyName] = useState("");
+  const [newPickupErrors, setNewPickupErrors] = useState<{ pickupDate?: string; companyName?: string }>({});
 
   // 「払出」確認モーダル
   const [issueSlipConfirmOpen, setIssueSlipConfirmOpen] = useState(false);
@@ -214,6 +279,61 @@ const FeaturePlaceholder = () => {
     return { name: v || undefined };
   };
 
+  const ordersSearchRestoreKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (feature?.key !== "orders") return;
+    const restoreKey = `${activeDepartment}`;
+    if (ordersSearchRestoreKeyRef.current === restoreKey) return;
+    ordersSearchRestoreKeyRef.current = restoreKey;
+
+    // Prefer URL state if present (supports refresh/back).
+    const qs = new URLSearchParams(location.search);
+    const rawFilter = qs.get("ordersFilter");
+    const rawShow = qs.get("ordersResults");
+    if (rawFilter || rawShow) {
+      if (rawFilter) {
+        try {
+          setOrdersFilter(normalizeOrdersFilter(JSON.parse(rawFilter)));
+        } catch {
+          setOrdersFilter(initialOrdersFilter);
+        }
+      }
+      if (rawShow != null) setShowOrdersResults(rawShow === "1");
+      return;
+    }
+
+    // Fallback to persisted state (supports navigating away and coming back via a clean link).
+    const persisted = loadOrdersSearchState(activeDepartment);
+    if (!persisted) return;
+    setOrdersFilter(persisted.filter);
+    setShowOrdersResults(persisted.showResults);
+  }, [activeDepartment, feature?.key, location.search]);
+
+  useEffect(() => {
+    if (feature?.key !== "orders") return;
+    saveOrdersSearchState(activeDepartment, {
+      v: 1,
+      filter: ordersFilter,
+      showResults: showOrdersResults,
+      savedAt: Date.now()
+    });
+
+    // Mirror to URL (replace) so back/refresh restores without relying on storage.
+    const qs = new URLSearchParams(location.search);
+    const isDefaultFilter = JSON.stringify(ordersFilter) === JSON.stringify(initialOrdersFilter);
+    if (!isDefaultFilter) qs.set("ordersFilter", JSON.stringify(ordersFilter));
+    else qs.delete("ordersFilter");
+    if (showOrdersResults) qs.set("ordersResults", "1");
+    else qs.delete("ordersResults");
+
+    const nextSearch = qs.toString();
+    const next = nextSearch ? `?${nextSearch}` : "";
+    if (next !== location.search) {
+      navigate({ pathname: location.pathname, search: next }, { replace: true });
+    }
+  }, [activeDepartment, feature?.key, location.pathname, location.search, navigate, ordersFilter, showOrdersResults]);
+
   useEffect(() => {
     saveInboundRows(inboundRows);
   }, [inboundRows]);
@@ -227,6 +347,10 @@ const FeaturePlaceholder = () => {
   }, [inboundDraft]);
 
   useEffect(() => {
+    savePickupDraft(pickupDraft);
+  }, [pickupDraft]);
+
+  useEffect(() => {
     return () => {
       if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
     };
@@ -236,6 +360,77 @@ const FeaturePlaceholder = () => {
     setOrdersToast({ message, variant });
     if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setOrdersToast(null), durationMs);
+  };
+
+  const closeOrdersDetailRelatedModals = () => {
+    // 払出確認
+    setIssueSlipConfirmOpen(false);
+    setIssueSlipTargetRow(null);
+
+    // テーブル編集系モーダル
+    setLocationModalOpen(false);
+    setLocationModalTargetRow(null);
+    setLocationModalInitial({});
+
+    setMachineTypeModalOpen(false);
+    setMachineTypeTargetRow(null);
+    setMachineTypeInitial({});
+    setMachineTypeDisableAddProduct(false);
+    setMachineTypeInitialQuantity("");
+
+    setPickupOrdersMachineModalOpen(false);
+    setPickupOrdersMachineTargetRow(null);
+    setPickupOrdersMachineInitialSelectedIds([]);
+    setPickupOrdersMachineInitialInstructionNote("");
+    setPickupOrdersMachineInTableNames([]);
+    setPickupOrdersMachineSelectedFallbackNames([]);
+    setPickupOrdersMachinePinnedId("");
+    setPickupOrdersMachinePinnedName("");
+    setPickupOrdersMachineContext({});
+
+    setInstructionNoteModalOpen(false);
+    setInstructionNoteTargetRow(null);
+    setInstructionNoteInitial("");
+
+    setMachineNoModalOpen(false);
+    setMachineNoTargetRow(null);
+    setMachineNoInitial("");
+
+    setOrderStatusModalOpen(false);
+    setOrderStatusTargetRow(null);
+    setOrderStatusInitial("予約");
+
+    setQuantityModalOpen(false);
+    setQuantityTargetRow(null);
+    setQuantityInitial("");
+
+    setVehicleModalOpen(false);
+    setVehicleTargetRow(null);
+    setVehicleInitial("");
+
+    setWreckerModalOpen(false);
+    setWreckerTargetRow(null);
+    setWreckerInitial("");
+
+    setDriverModalOpen(false);
+    setDriverTargetRow(null);
+    setDriverInitial({});
+
+    setSiteModalOpen(false);
+    setSiteTargetRow(null);
+    setSiteInitial({});
+
+    setTimeModalOpen(false);
+    setTimeTargetRow(null);
+    setTimeInitial("");
+
+    setFactoryNoteModalOpen(false);
+    setFactoryNoteTargetRow(null);
+    setFactoryNoteInitial("");
+
+    setTransportFeeModalOpen(false);
+    setTransportFeeTargetRow(null);
+    setTransportFeeInitial("");
   };
 
   const [machineTypeModalOpen, setMachineTypeModalOpen] = useState(false);
@@ -419,7 +614,7 @@ const FeaturePlaceholder = () => {
   };
 
   const insertOrdersPdfRowsAfterDisplayRow = (displayRowIndex: number, newRows: string[][]) => {
-    const ref = ordersPdfDisplay.rowRefs[displayRowIndex];
+    const ref = ordersPdfDisplaySorted.rowRefs[displayRowIndex];
     if (!ref) return;
     if (ref.kind === "引取") {
       setPickupRows((prev) => {
@@ -493,8 +688,14 @@ const FeaturePlaceholder = () => {
   };
 
   const navigateToInboundOrderDetail = (args: { scope: "results" | "draft"; kind: "搬入" | "引取"; rowIndex: number }) => {
+    closeOrdersDetailRelatedModals();
     const { scope, kind, rowIndex } = args;
-    const shownRows = scope === "draft" ? (inboundDraft?.rows ?? []) : ordersPdfShownRows;
+    const shownRows =
+      scope === "draft"
+        ? kind === "引取"
+          ? (pickupDraft?.rows ?? [])
+          : (inboundDraft?.rows ?? [])
+        : ordersPdfShownRows;
     if (!shownRows[rowIndex]) return;
 
     const groupStart = getOrdersPdfGroupStartDisplayRow(shownRows, rowIndex);
@@ -1110,8 +1311,144 @@ const FeaturePlaceholder = () => {
     shouldShowPickupOrdersPdfResult
   ]);
 
+  const ordersPdfDisplaySorted = useMemo((): { rows: string[][]; rowRefs: OrdersPdfRowRef[] } => {
+    const baseRows = ordersPdfDisplay.rows;
+    const baseRefs = ordersPdfDisplay.rowRefs;
+    if (!ordersPdfSort) return ordersPdfDisplay;
+
+    const getFirstNonEmptyInRange = (start: number, end: number, colIndex: number) => {
+      for (let i = start; i < end; i += 1) {
+        const v = String(baseRows[i]?.[colIndex] ?? "").trim();
+        if (v) return v;
+      }
+      return "";
+    };
+
+    const statusRank = (statusRaw: string): number => {
+      const s = (statusRaw ?? "").trim() as OrderStatus;
+      if (s === "予約") return 0;
+      if (s === "確定") return 1;
+      if (s === "払出済") return 2;
+      if (s === "キャンセル") return 3;
+      if (s === "破棄") return 4;
+      return 99;
+    };
+
+    const parseMaybeNumber = (v: string): number => {
+      const n = Number(String(v ?? "").trim());
+      return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+    };
+
+    const compareText = (a: string, b: string) =>
+      String(a ?? "").localeCompare(String(b ?? ""), "ja", { numeric: true, sensitivity: "base" });
+
+    const groups: Array<{
+      start: number;
+      end: number;
+      kind: "搬入" | "引取";
+      startMinutes: number;
+      originalIndex: number;
+    }> = [];
+
+    let i = 0;
+    while (i < baseRows.length) {
+      while (i < baseRows.length && !isPdfGroupStartRow(baseRows[i] ?? [])) i += 1;
+      if (i >= baseRows.length) break;
+      const start = i;
+      i += 1;
+      while (i < baseRows.length && !isPdfGroupStartRow(baseRows[i] ?? [])) i += 1;
+      const end = i;
+      const timeCell = getFirstNonEmptyInRange(start, end, COL.time);
+      const kind = baseRefs[start]?.kind ?? "搬入";
+      groups.push({
+        start,
+        end,
+        kind,
+        startMinutes: parseStartTimeMinutes(timeCell),
+        originalIndex: groups.length
+      });
+    }
+
+    const dir = ordersPdfSort.direction === "asc" ? 1 : -1;
+    const colIndex = ordersPdfSort.colIndex;
+
+    const compareGroups = (a: (typeof groups)[number], b: (typeof groups)[number]) => {
+      if (colIndex === COL.status) {
+        const av = getFirstNonEmptyInRange(a.start, a.end, COL.status) || "予約";
+        const bv = getFirstNonEmptyInRange(b.start, b.end, COL.status) || "予約";
+        const ar = statusRank(av);
+        const br = statusRank(bv);
+        if (ar !== br) return (ar - br) * dir;
+        // tie-breaker: time, kind, original order
+        if (a.startMinutes !== b.startMinutes) return (a.startMinutes - b.startMinutes) * dir;
+        if (a.kind !== b.kind) return (a.kind === "搬入" ? -1 : 1) * dir;
+        return (a.originalIndex - b.originalIndex) * dir;
+      }
+
+      if (colIndex === COL.time) {
+        if (a.startMinutes !== b.startMinutes) return (a.startMinutes - b.startMinutes) * dir;
+        const at = getFirstNonEmptyInRange(a.start, a.end, COL.time);
+        const bt = getFirstNonEmptyInRange(b.start, b.end, COL.time);
+        const t2 = compareText(at, bt);
+        if (t2) return t2 * dir;
+        if (a.kind !== b.kind) return (a.kind === "搬入" ? -1 : 1) * dir;
+        return (a.originalIndex - b.originalIndex) * dir;
+      }
+
+      if (colIndex === COL.vehicle) {
+        const av = getFirstNonEmptyInRange(a.start, a.end, COL.vehicle);
+        const bv = getFirstNonEmptyInRange(b.start, b.end, COL.vehicle);
+        const ae = !String(av).trim();
+        const be = !String(bv).trim();
+        if (ae !== be) return (ae ? 1 : -1) * dir; // 空は最後
+        const c = compareText(av, bv);
+        if (c) return c * dir;
+        return (a.originalIndex - b.originalIndex) * dir;
+      }
+
+      if (colIndex === COL.wrecker) {
+        const av = getFirstNonEmptyInRange(a.start, a.end, COL.wrecker);
+        const bv = getFirstNonEmptyInRange(b.start, b.end, COL.wrecker);
+        const ae = !String(av).trim();
+        const be = !String(bv).trim();
+        if (ae !== be) return (ae ? 1 : -1) * dir; // 空は最後
+        const c = compareText(av, bv);
+        if (c) return c * dir;
+        return (a.originalIndex - b.originalIndex) * dir;
+      }
+
+      // フォールバック（数値→文字）
+      const avNum = parseMaybeNumber(getFirstNonEmptyInRange(a.start, a.end, colIndex));
+      const bvNum = parseMaybeNumber(getFirstNonEmptyInRange(b.start, b.end, colIndex));
+      if (avNum !== bvNum) return (avNum - bvNum) * dir;
+      const av = getFirstNonEmptyInRange(a.start, a.end, colIndex);
+      const bv = getFirstNonEmptyInRange(b.start, b.end, colIndex);
+      const c = compareText(av, bv);
+      if (c) return c * dir;
+      return (a.originalIndex - b.originalIndex) * dir;
+    };
+
+    const sortedGroups = [...groups].sort(compareGroups);
+    const nextRows: string[][] = [];
+    const nextRefs: OrdersPdfRowRef[] = [];
+    for (const g of sortedGroups) {
+      for (let r = g.start; r < g.end; r += 1) {
+        nextRows.push(baseRows[r] ?? []);
+        nextRefs.push(baseRefs[r] ?? { kind: g.kind, sourceRowIndex: 0 });
+      }
+    }
+    return { rows: nextRows, rowRefs: nextRefs };
+  }, [isPdfGroupStartRow, ordersPdfDisplay, ordersPdfSort, parseStartTimeMinutes]);
+
+  const handleOrdersPdfRequestSort = (colIndex: number) => {
+    setOrdersPdfSort((prev) => {
+      if (!prev || prev.colIndex !== colIndex) return { colIndex, direction: "asc" };
+      return { colIndex, direction: prev.direction === "asc" ? "desc" : "asc" };
+    });
+  };
+
   const ordersPdfShownRows = useMemo(() => {
-    const base = ordersPdfDisplay.rows;
+    const base = ordersPdfDisplaySorted.rows;
 
     // 受注検索結果の「場所の左隣の番号」は、表の上から 1,2,3... と順番に振るだけ（デモ）
     let groupNo = 0;
@@ -1132,7 +1469,7 @@ const FeaturePlaceholder = () => {
       return row;
     });
   }, [
-    ordersPdfDisplay.rows
+    ordersPdfDisplaySorted.rows
   ]);
 
   const inboundDraftShownRows = useMemo(() => {
@@ -1151,6 +1488,23 @@ const FeaturePlaceholder = () => {
       return row;
     });
   }, [inboundDraft?.rows]);
+
+  const pickupDraftShownRows = useMemo(() => {
+    const base = pickupDraft?.rows ?? [];
+    let groupNo = 0;
+    return base.map((r) => {
+      const row = [...(r ?? [])];
+      const isStart = (row[COL.location] ?? "").trim().length > 0;
+      if (isStart) {
+        groupNo += 1;
+        row[COL.groupNo] = String(groupNo);
+        if (!String(row[COL.status] ?? "").trim()) row[COL.status] = "予約";
+      } else {
+        row[COL.groupNo] = "";
+      }
+      return row;
+    });
+  }, [pickupDraft?.rows]);
 
   const handleInboundDraftCellDoubleClick = (args: { rowIndex: number; colIndex: number; value: string }) => {
     if (!inboundDraft) return;
@@ -1269,8 +1623,125 @@ const FeaturePlaceholder = () => {
     }
   };
 
+  const handlePickupDraftCellDoubleClick = (args: { rowIndex: number; colIndex: number; value: string }) => {
+    if (!pickupDraft) return;
+    const { rowIndex, colIndex, value } = args;
+    setOrdersPdfEditingScope("draft");
+    setOrdersPdfEditingKind("引取");
+
+    if (colIndex === COL.status) {
+      const shownRows = pickupDraftShownRows;
+      const groupStart = getOrdersPdfGroupStartDisplayRow(shownRows, rowIndex);
+      const current = String(shownRows[groupStart]?.[COL.status] ?? "").trim() || "予約";
+      if (current === "払出済") {
+        showToast("払出済は伝票発行で自動設定されます", "warn", 2500);
+        return;
+      }
+      setOrderStatusTargetRow(groupStart);
+      setOrderStatusInitial(
+        (orderStatusOptions.includes(current as OrderStatusSelectable) ? (current as OrderStatusSelectable) : "予約") as OrderStatusSelectable
+      );
+      setOrderStatusModalOpen(true);
+      return;
+    }
+
+    if (colIndex === COL.location) {
+      setLocationModalTargetRow(rowIndex);
+      setLocationModalInitial(parseLocationCell(value ?? ""));
+      setLocationModalOpen(true);
+      return;
+    }
+    if (colIndex === COL.machine) {
+      if ((value ?? "").trim().startsWith("※")) {
+        setInstructionNoteTargetRow(rowIndex);
+        setInstructionNoteInitial(value ?? "");
+        setInstructionNoteModalOpen(true);
+        return;
+      }
+
+      const shownRows = pickupDraft.rows;
+      const nextRow = shownRows[rowIndex + 1];
+      const nextRowInstructionNote =
+        nextRow &&
+        (nextRow[COL.groupNo] ?? "").trim() === "" &&
+        (nextRow[COL.location] ?? "").trim() === "" &&
+        (nextRow[COL.machine] ?? "").trim().startsWith("※")
+          ? (nextRow[COL.machine] ?? "")
+          : "";
+      const parsed = parseMachineTypeFromCell(value);
+      const linked = machineTypeByMachineNameMock[parsed.baseName];
+      const inferredCategoryId = machineCategoryMasterMock.find((x) => x.name === parsed.baseName)?.id;
+      setMachineTypeDisableAddProduct(!String(value ?? "").trim());
+      setMachineTypeInitialQuantity(String(shownRows[rowIndex]?.[COL.quantity] ?? "").trim());
+      setMachineTypeTargetRow(rowIndex);
+      setMachineTypeInitial({
+        kindId: parsed.kindId ?? linked?.kindId,
+        categoryId: parsed.categoryId ?? linked?.categoryId ?? inferredCategoryId
+      });
+      setInstructionNoteInitial(nextRowInstructionNote);
+      setMachineTypeModalOpen(true);
+      return;
+    }
+    if (colIndex === COL.machineNo) {
+      setMachineNoTargetRow(rowIndex);
+      setMachineNoInitial(value ?? "");
+      setMachineNoModalOpen(true);
+      return;
+    }
+    if (colIndex === COL.quantity) {
+      setQuantityTargetRow(rowIndex);
+      setQuantityInitial(value ?? "");
+      setQuantityModalOpen(true);
+      return;
+    }
+    if (colIndex === COL.vehicle) {
+      setVehicleTargetRow(rowIndex);
+      setVehicleInitial(value ?? "");
+      setVehicleModalOpen(true);
+      return;
+    }
+    if (colIndex === COL.wrecker) {
+      setWreckerTargetRow(rowIndex);
+      setWreckerInitial(value ?? "");
+      setWreckerModalOpen(true);
+      return;
+    }
+    if (colIndex === COL.driver) {
+      const parsed = driverAssignParseFromCell(value ?? "");
+      setDriverTargetRow(rowIndex);
+      setDriverInitial(parsed);
+      setDriverModalOpen(true);
+      return;
+    }
+    if (colIndex === COL.site) {
+      const parsed = parseSiteFromCell(value ?? "");
+      setSiteTargetRow(rowIndex);
+      setSiteInitial(parsed);
+      setSiteModalOpen(true);
+      return;
+    }
+    if (colIndex === COL.time) {
+      setTimeTargetRow(rowIndex);
+      setTimeInitial(value ?? "");
+      setTimeModalOpen(true);
+      return;
+    }
+    if (colIndex === COL.note) {
+      setFactoryNoteTargetRow(rowIndex);
+      setFactoryNoteInitial(value ?? "");
+      setFactoryNoteModalOpen(true);
+      return;
+    }
+    if (colIndex === COL.transportFee) {
+      setTransportFeeTargetRow(rowIndex);
+      setTransportFeeInitial(value ?? "");
+      setTransportFeeModalOpen(true);
+      return;
+    }
+  };
+
   const setOrdersPdfCellByDisplayRow = (displayRowIndex: number, colIndex: number, nextValue: string) => {
-    const ref = ordersPdfDisplay.rowRefs[displayRowIndex];
+    const ref = ordersPdfDisplaySorted.rowRefs[displayRowIndex];
     if (!ref) return;
     if (ref.kind === "引取") {
       setPickupCell(ref.sourceRowIndex, colIndex, nextValue);
@@ -1281,14 +1752,25 @@ const FeaturePlaceholder = () => {
 
   const setOrdersPdfCellByScope = (rowIndex: number, colIndex: number, nextValue: string) => {
     if (ordersPdfEditingScope === "draft") {
-      setInboundDraft((prev) => {
-        if (!prev) return prev;
-        const nextRows = prev.rows.map((r) => [...r]);
-        const target = nextRows[rowIndex];
-        if (!target) return prev;
-        nextRows[rowIndex] = target.map((cell, cidx) => (cidx === colIndex ? nextValue : cell));
-        return { ...prev, rows: nextRows };
-      });
+      if (ordersPdfEditingKind === "引取") {
+        setPickupDraft((prev) => {
+          if (!prev) return prev;
+          const nextRows = prev.rows.map((r) => [...r]);
+          const target = nextRows[rowIndex];
+          if (!target) return prev;
+          nextRows[rowIndex] = target.map((cell, cidx) => (cidx === colIndex ? nextValue : cell));
+          return { ...prev, rows: nextRows };
+        });
+      } else {
+        setInboundDraft((prev) => {
+          if (!prev) return prev;
+          const nextRows = prev.rows.map((r) => [...r]);
+          const target = nextRows[rowIndex];
+          if (!target) return prev;
+          nextRows[rowIndex] = target.map((cell, cidx) => (cidx === colIndex ? nextValue : cell));
+          return { ...prev, rows: nextRows };
+        });
+      }
       return;
     }
     setOrdersPdfCellByDisplayRow(rowIndex, colIndex, nextValue);
@@ -1296,18 +1778,28 @@ const FeaturePlaceholder = () => {
 
   const insertOrdersPdfRowsAfterDisplayRowByScope = (rowIndex: number, newRows: string[][]) => {
     if (ordersPdfEditingScope === "draft") {
-      setInboundDraft((prev) => {
-        if (!prev) return prev;
-        const nextRows = prev.rows.map((r) => [...r]);
-        nextRows.splice(rowIndex + 1, 0, ...newRows.map((r) => [...r]));
-        return { ...prev, rows: nextRows };
-      });
+      if (ordersPdfEditingKind === "引取") {
+        setPickupDraft((prev) => {
+          if (!prev) return prev;
+          const nextRows = prev.rows.map((r) => [...r]);
+          nextRows.splice(rowIndex + 1, 0, ...newRows.map((r) => [...r]));
+          return { ...prev, rows: nextRows };
+        });
+      } else {
+        setInboundDraft((prev) => {
+          if (!prev) return prev;
+          const nextRows = prev.rows.map((r) => [...r]);
+          nextRows.splice(rowIndex + 1, 0, ...newRows.map((r) => [...r]));
+          return { ...prev, rows: nextRows };
+        });
+      }
       return;
     }
     insertOrdersPdfRowsAfterDisplayRow(rowIndex, newRows);
   };
 
   const clearInboundDraft = () => setInboundDraft(null);
+  const clearPickupDraft = () => setPickupDraft(null);
 
   const createInboundDraftRow = (companyName: string): string[] => {
     const row = Array.from({ length: inboundOrderSearchColumns.length }).map(() => "");
@@ -1331,6 +1823,30 @@ const FeaturePlaceholder = () => {
     setNewInboundDate("");
     setNewInboundCompanyName("");
     setNewInboundErrors({});
+  };
+
+  const createPickupDraftRow = (companyName: string): string[] => {
+    const row = Array.from({ length: inboundOrderSearchColumns.length }).map(() => "");
+    row[COL.location] = "（未設定）";
+    row[COL.customer] = companyName.trim();
+    row[COL.status] = "予約";
+    return row;
+  };
+
+  const handleCreatePickupDraft = () => {
+    const pickupDate = newPickupDate.trim();
+    const companyName = newPickupCompanyName.trim();
+    const errors: { pickupDate?: string; companyName?: string } = {};
+    if (!pickupDate) errors.pickupDate = "引取日は必須です";
+    if (!companyName) errors.companyName = "会社名は必須です";
+    setNewPickupErrors(errors);
+    if (errors.pickupDate || errors.companyName) return;
+
+    setPickupDraft({ pickupDate, rows: [createPickupDraftRow(companyName)] });
+    setNewPickupModalOpen(false);
+    setNewPickupDate("");
+    setNewPickupCompanyName("");
+    setNewPickupErrors({});
   };
 
   const parseFirstTimeCellMinutes = (rows: string[][]) => {
@@ -1362,6 +1878,7 @@ const FeaturePlaceholder = () => {
   };
 
   const DRAG_TYPE_INBOUND_DRAFT = "application/x-demo-inbound-draft";
+  const DRAG_TYPE_PICKUP_DRAFT = "application/x-demo-pickup-draft";
 
   const handleAddInboundDraftToTable = () => {
     const draft = inboundDraft;
@@ -1404,9 +1921,46 @@ const FeaturePlaceholder = () => {
     clearInboundDraft();
   };
 
+  const handleAddPickupDraftToTable = () => {
+    const draft = pickupDraft;
+    if (!draft || draft.rows.length === 0) return;
+
+    const draftRows = draft.rows.map((r) => [...r]);
+    const matches = doesDraftMatchCurrentSearchFilter(draftRows);
+
+    const insertMinutes = parseFirstTimeCellMinutes(draftRows);
+    const groups = buildGroups(pickupRows, "引取");
+    let insertAt = pickupRows.length;
+    for (const g of groups) {
+      if (g.startMinutes > insertMinutes) {
+        insertAt = g.startRowIndex;
+        break;
+      }
+    }
+
+    setPickupRows((prev) => {
+      const next = [...prev];
+      next.splice(insertAt, 0, ...draftRows);
+      return next;
+    });
+
+    if (matches) {
+      const range = { start: insertAt, end: insertAt + draftRows.length - 1 };
+      setPickupInsertAnimRange(range);
+      window.setTimeout(() => setPickupInsertAnimRange(null), 350);
+      setPickupHighlightRange(range);
+      window.setTimeout(() => setPickupHighlightRange(null), 2000);
+      showToast("✓ 受注を追加しました", "success", 2000);
+    } else {
+      showToast("⚠️ 検索条件に合わないため表示されません", "warn", 3000);
+    }
+
+    clearPickupDraft();
+  };
+
   const handleStartDragInboundDraft = (e: React.DragEvent) => {
     if (!inboundDraft) return;
-    setIsDraggingInboundDraft(true);
+    setDraggingDraftKind("搬入");
     try {
       e.dataTransfer.setData(DRAG_TYPE_INBOUND_DRAFT, "1");
     } catch {
@@ -1415,13 +1969,24 @@ const FeaturePlaceholder = () => {
     e.dataTransfer.effectAllowed = "move";
   };
 
-  const handleEndDragInboundDraft = () => {
-    setIsDraggingInboundDraft(false);
+  const handleStartDragPickupDraft = (e: React.DragEvent) => {
+    if (!pickupDraft) return;
+    setDraggingDraftKind("引取");
+    try {
+      e.dataTransfer.setData(DRAG_TYPE_PICKUP_DRAFT, "1");
+    } catch {
+      // ignore
+    }
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleEndDragDraft = () => {
+    setDraggingDraftKind(null);
     setIsDragOverOrdersTable(false);
   };
 
   const handleOrdersTableDragOver = (e: React.DragEvent) => {
-    if (!isDraggingInboundDraft) return;
+    if (!draggingDraftKind) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setIsDragOverOrdersTable(true);
@@ -1434,17 +1999,24 @@ const FeaturePlaceholder = () => {
   const handleOrdersTableDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOverOrdersTable(false);
-    setIsDraggingInboundDraft(false);
+    setDraggingDraftKind(null);
 
-    const okType = (() => {
+    const hasType = (t: string) => {
       try {
-        return Boolean(e.dataTransfer.types?.includes(DRAG_TYPE_INBOUND_DRAFT));
+        return Boolean(e.dataTransfer.types?.includes(t));
       } catch {
         return false;
       }
-    })();
-    if (!okType) return;
-    handleAddInboundDraftToTable();
+    };
+
+    if (hasType(DRAG_TYPE_INBOUND_DRAFT)) {
+      handleAddInboundDraftToTable();
+      return;
+    }
+    if (hasType(DRAG_TYPE_PICKUP_DRAFT)) {
+      handleAddPickupDraftToTable();
+      return;
+    }
   };
 
   const ordersSearchResultBody = shouldShowAnyOrdersPdfResult ? (
@@ -1453,7 +2025,7 @@ const FeaturePlaceholder = () => {
         検索条件「{ordersPdfTitleLabel}」選択時のデモ表示（PDF/画像の表を再現）※場所セルをダブルクリックで場所変更モーダル
       </p>
       <div
-        className={isDraggingInboundDraft ? "orders-drop-target" : undefined}
+        className={draggingDraftKind ? "orders-drop-target" : undefined}
         data-active={isDragOverOrdersTable ? "1" : "0"}
         onDragOver={handleOrdersTableDragOver}
         onDragLeave={handleOrdersTableDragLeave}
@@ -1469,6 +2041,9 @@ const FeaturePlaceholder = () => {
           columns={inboundOrderSearchColumns}
           rows={ordersPdfShownRows}
           tableClassName={shouldShowPickupOrdersPdfResult ? "inbound-pdf-table--pickup" : undefined}
+          sortableColumnIndices={[COL.status, COL.vehicle, COL.wrecker, COL.time]}
+          sortState={ordersPdfSort}
+          onRequestSort={handleOrdersPdfRequestSort}
           renderCell={({ rowIndex, colIndex, row, value }) => {
             if (colIndex === COL.status) {
               const { symbol, color } = statusToSymbolAndColor(String(value ?? ""));
@@ -1527,7 +2102,7 @@ const FeaturePlaceholder = () => {
                   if (!canIssueSlip) return;
                   setOrdersPdfEditingScope("results");
                   if (shouldShowMixedOrdersPdfResult) {
-                    const ref = ordersPdfDisplay.rowRefs[rowIndex];
+                    const ref = ordersPdfDisplaySorted.rowRefs[rowIndex];
                     setOrdersPdfEditingKind(ref?.kind ?? "搬入");
                   } else {
                     setOrdersPdfEditingKind(ordersPdfKindLabel);
@@ -1541,7 +2116,7 @@ const FeaturePlaceholder = () => {
             );
           }}
           getRowClassName={({ rowIndex }) => {
-            const ref = ordersPdfDisplay.rowRefs[rowIndex];
+            const ref = ordersPdfDisplaySorted.rowRefs[rowIndex];
             const classes: string[] = [];
             if (shouldShowMixedOrdersPdfResult && ref?.kind === "引取") classes.push("orders-pdf-row--pickup");
             if (ref?.kind === "搬入") {
@@ -1556,6 +2131,22 @@ const FeaturePlaceholder = () => {
                 inboundHighlightRange &&
                 ref.sourceRowIndex >= inboundHighlightRange.start &&
                 ref.sourceRowIndex <= inboundHighlightRange.end
+              ) {
+                classes.push("orders-row-highlight");
+              }
+            }
+            if (ref?.kind === "引取") {
+              if (
+                pickupInsertAnimRange &&
+                ref.sourceRowIndex >= pickupInsertAnimRange.start &&
+                ref.sourceRowIndex <= pickupInsertAnimRange.end
+              ) {
+                classes.push("orders-row-insert");
+              }
+              if (
+                pickupHighlightRange &&
+                ref.sourceRowIndex >= pickupHighlightRange.start &&
+                ref.sourceRowIndex <= pickupHighlightRange.end
               ) {
                 classes.push("orders-row-highlight");
               }
@@ -1584,7 +2175,7 @@ const FeaturePlaceholder = () => {
           onCellDoubleClick={({ rowIndex, colIndex, value }) => {
             setOrdersPdfEditingScope("results");
             if (shouldShowMixedOrdersPdfResult) {
-              const ref = ordersPdfDisplay.rowRefs[rowIndex];
+              const ref = ordersPdfDisplaySorted.rowRefs[rowIndex];
               setOrdersPdfEditingKind(ref?.kind ?? "搬入");
             } else {
               setOrdersPdfEditingKind(ordersPdfKindLabel);
@@ -1624,7 +2215,7 @@ const FeaturePlaceholder = () => {
 
               // 引取は搬入と編集方式が異なるため、専用モーダルで「出庫中一覧/受注一覧」から選択する（デモ）
               const activeKind: "搬入" | "引取" = shouldShowMixedOrdersPdfResult
-                ? (ordersPdfDisplay.rowRefs[rowIndex]?.kind ?? ordersPdfKindLabel)
+                ? (ordersPdfDisplaySorted.rowRefs[rowIndex]?.kind ?? ordersPdfKindLabel)
                 : ordersPdfKindLabel;
               if (activeKind === "引取") {
                 const shownRows = ordersPdfShownRows;
@@ -1696,7 +2287,7 @@ const FeaturePlaceholder = () => {
               }
 
               const shownRows = shouldShowMixedOrdersPdfResult
-                ? ordersPdfDisplay.rows
+                ? ordersPdfDisplaySorted.rows
                 : shouldShowInboundOrdersPdfResult
                   ? inboundRows
                   : pickupRows;
@@ -1798,7 +2389,7 @@ const FeaturePlaceholder = () => {
           >
             + 新規受注登録
           </button>
-          {isDraggingInboundDraft && (
+          {draggingDraftKind === "搬入" && (
             <div style={{ color: "#16a34a", fontWeight: 900, fontSize: 12 }}>この表へドロップで追加</div>
           )}
         </div>
@@ -1838,7 +2429,67 @@ const FeaturePlaceholder = () => {
                 getRowProps={({ rowIndex }) => ({
                   draggable: true,
                   onDragStart: handleStartDragInboundDraft,
-                  onDragEnd: handleEndDragInboundDraft,
+                  onDragEnd: handleEndDragDraft,
+                  title: "ドラッグして受注検索結果の表にドロップで追加"
+                })}
+              />
+            </>
+          )}
+        </div>
+      )}
+
+      {shouldShowPickupOrdersPdfResult && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, gap: 12 }}>
+          <button
+            className="button"
+            type="button"
+            disabled={Boolean(pickupDraft)}
+            title={pickupDraft ? "新規登録エリアに受注があるためロック中です（クリアしてから新規登録してください）" : undefined}
+            onClick={() => setNewPickupModalOpen(true)}
+          >
+            + 新規受注登録
+          </button>
+          {draggingDraftKind === "引取" && (
+            <div style={{ color: "#16a34a", fontWeight: 900, fontSize: 12 }}>この表へドロップで追加</div>
+          )}
+        </div>
+      )}
+
+      {shouldShowPickupOrdersPdfResult && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #e2e8f0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <div style={{ fontWeight: 900, color: "#0f172a" }}>新規登録エリア（デモ）</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="button" type="button" disabled={!pickupDraft} onClick={clearPickupDraft}>
+                クリア
+              </button>
+            </div>
+          </div>
+
+          {!pickupDraft && (
+            <p style={{ marginTop: 8, marginBottom: 0, color: "#475569", fontSize: 12 }}>
+              「+ 新規受注登録」から作成すると、ここに1行追加されます。行をダブルクリックで追加入力し、行をドラッグして検索結果の表にドロップすると追加できます。
+            </p>
+          )}
+
+          {pickupDraft && (
+            <>
+              <p style={{ marginTop: 8, marginBottom: 0, color: "#475569", fontSize: 12 }}>
+                引取日: <span style={{ fontWeight: 900, color: "#0f172a" }}>{pickupDraft.pickupDate}</span>（行を掴んでドラッグ→上の表へドロップ）
+              </p>
+              <InboundPdfTable
+                ariaLabel="新規登録エリア（引取）"
+                columns={inboundOrderSearchColumns}
+                rows={pickupDraftShownRows}
+                colWidths={inboundOrderSearchColWidths}
+                mergeColumnIndices={[0, 1, 2, 6, 7, 8, 9, 10, 11, 12, 13, 14]}
+                mergeBlankCellsWithinGroup
+                groupStartColumnIndices={[2]}
+                onCellDoubleClick={handlePickupDraftCellDoubleClick}
+                getRowProps={({ rowIndex }) => ({
+                  draggable: true,
+                  onDragStart: handleStartDragPickupDraft,
+                  onDragEnd: handleEndDragDraft,
                   title: "ドラッグして受注検索結果の表にドロップで追加"
                 })}
               />
@@ -2471,6 +3122,71 @@ const FeaturePlaceholder = () => {
             </div>
           </div>
         )}
+        {feature.key === "orders" && showOrdersResults && shouldShowPickupOrdersPdfResult && newPickupModalOpen && (
+          <div className="modal-overlay" role="dialog" aria-modal="true">
+            <div className="modal" style={{ maxWidth: 520 }}>
+              <div className="modal-header">
+                <h3 style={{ margin: 0 }}>新規受注登録（引取・デモ）</h3>
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => {
+                    setNewPickupModalOpen(false);
+                    setNewPickupErrors({});
+                  }}
+                >
+                  閉じる
+                </button>
+              </div>
+              <div className="modal-body">
+                <p style={{ marginTop: 0, marginBottom: 10, color: "#475569", fontSize: 12, lineHeight: 1.35 }}>
+                  引取日と会社名を入力して「登録」すると、新規登録エリアに1行追加されます（デモDB: localStorage）。
+                </p>
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <label style={{ fontWeight: 800, color: "#0f172a" }}>引取日（必須）</label>
+                    <input
+                      className="filter-input"
+                      type="date"
+                      value={newPickupDate}
+                      onChange={(e) => setNewPickupDate(e.target.value)}
+                    />
+                    {newPickupErrors.pickupDate && (
+                      <div style={{ color: "#b91c1c", fontSize: 12, fontWeight: 800 }}>{newPickupErrors.pickupDate}</div>
+                    )}
+                  </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <label style={{ fontWeight: 800, color: "#0f172a" }}>会社名（必須）</label>
+                    <input
+                      className="filter-input"
+                      placeholder="例) 丸建興業"
+                      value={newPickupCompanyName}
+                      onChange={(e) => setNewPickupCompanyName(e.target.value)}
+                    />
+                    {newPickupErrors.companyName && (
+                      <div style={{ color: "#b91c1c", fontSize: 12, fontWeight: 800 }}>{newPickupErrors.companyName}</div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={() => {
+                      setNewPickupModalOpen(false);
+                      setNewPickupErrors({});
+                    }}
+                  >
+                    キャンセル
+                  </button>
+                  <button className="button primary" type="button" onClick={handleCreatePickupDraft}>
+                    登録
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {feature.key === "orders" && showOrdersResults && shouldShowAnyOrdersPdfResult && issueSlipConfirmOpen && (
           <div className="modal-overlay" role="dialog" aria-modal="true">
             <div className="modal" style={{ maxWidth: 420 }}>
@@ -2649,7 +3365,7 @@ const FeaturePlaceholder = () => {
               );
 
               // 他行に影響を与えない: ダブルクリックした「その行」だけを更新し、追加分はその直下に挿入する
-              const targetRef = ordersPdfDisplay.rowRefs[pickupOrdersMachineTargetRow];
+              const targetRef = ordersPdfDisplaySorted.rowRefs[pickupOrdersMachineTargetRow];
               if (!targetRef || targetRef.kind !== "引取") return;
               const targetSrcIndex = targetRef.sourceRowIndex;
 
@@ -2762,7 +3478,7 @@ const FeaturePlaceholder = () => {
                 ordersPdfEditingScope === "draft"
                   ? inboundDraft?.rows ?? []
                   : shouldShowMixedOrdersPdfResult
-                    ? ordersPdfDisplay.rows
+                    ? ordersPdfDisplaySorted.rows
                     : shouldShowInboundOrdersPdfResult
                       ? inboundRows
                       : pickupRows;
@@ -2790,7 +3506,7 @@ const FeaturePlaceholder = () => {
                   ordersPdfEditingScope === "draft"
                     ? inboundDraft?.rows ?? []
                     : shouldShowMixedOrdersPdfResult
-                      ? ordersPdfDisplay.rows
+                      ? ordersPdfDisplaySorted.rows
                       : shouldShowInboundOrdersPdfResult
                         ? inboundRows
                         : pickupRows;

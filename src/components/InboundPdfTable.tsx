@@ -17,6 +17,10 @@ type Props = {
   colWidths?: Array<string | undefined>;
   ariaLabel?: string;
   onCellDoubleClick?: (args: { rowIndex: number; colIndex: number; value: string }) => void;
+  /** optional sortable columns (header click triggers onRequestSort) */
+  sortableColumnIndices?: number[];
+  sortState?: { colIndex: number; direction: "asc" | "desc" } | null;
+  onRequestSort?: (colIndex: number) => void;
   /** optional row props (e.g. draggable) */
   getRowProps?: (args: { rowIndex: number; row: string[] }) => React.HTMLAttributes<HTMLTableRowElement> | undefined;
   /** optional cell renderer (e.g. for action buttons) */
@@ -38,6 +42,9 @@ export const InboundPdfTable: React.FC<Props> = ({
   colWidths,
   ariaLabel,
   onCellDoubleClick,
+  sortableColumnIndices,
+  sortState,
+  onRequestSort,
   getRowProps,
   renderCell
 }) => {
@@ -120,9 +127,30 @@ export const InboundPdfTable: React.FC<Props> = ({
         <thead>
           <tr>
             {columns.map((col, idx) => (
-              <th key={`th-${idx}`} data-col={idx}>
-                {col}
-              </th>
+              (() => {
+                const isSortable = Boolean(sortableColumnIndices?.includes(idx) && onRequestSort);
+                const isActive = sortState?.colIndex === idx;
+                const ariaSort = isActive ? (sortState?.direction === "asc" ? "ascending" : "descending") : "none";
+                return (
+                  <th key={`th-${idx}`} data-col={idx} aria-sort={ariaSort}>
+                    {isSortable ? (
+                      <button
+                        type="button"
+                        className="inbound-pdf-table__sort-button"
+                        onClick={() => onRequestSort?.(idx)}
+                        title={`${col} を並び替え`}
+                      >
+                        <span className="inbound-pdf-table__sort-label">{col}</span>
+                        <span className="inbound-pdf-table__sort-indicator" aria-hidden="true">
+                          {isActive ? (sortState?.direction === "asc" ? "▲" : "▼") : "↕"}
+                        </span>
+                      </button>
+                    ) : (
+                      col
+                    )}
+                  </th>
+                );
+              })()
             ))}
           </tr>
         </thead>

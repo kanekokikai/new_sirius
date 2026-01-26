@@ -22,7 +22,7 @@ const InboundOrderDetailPage: React.FC = () => {
     return (
       <div className="page">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ marginTop: 0 }}>搬入受注詳細（デモ）</h2>
+          <h2 style={{ marginTop: 0 }}>受注詳細（デモ）</h2>
           <button className="button" type="button" onClick={() => navigate(-1)}>
             戻る
           </button>
@@ -35,7 +35,7 @@ const InboundOrderDetailPage: React.FC = () => {
   return (
     <div className="page">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2 style={{ marginTop: 0 }}>搬入受注詳細（デモ）</h2>
+        <h2 style={{ marginTop: 0 }}>受注詳細（デモ）</h2>
         <button className="button" type="button" onClick={() => navigate(-1)}>
           戻る
         </button>
