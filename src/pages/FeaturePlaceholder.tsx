@@ -163,6 +163,11 @@ const FeaturePlaceholder = () => {
     orderDemoPatch: Partial<OrderDemoForm>;
     orderLines: OrderLine[];
   } | null>(null);
+  const [pendingOrderDetailOpen, setPendingOrderDetailOpen] = useState<{
+    orderCreateType: OrderCreateType;
+    orderDemoPatch: Partial<OrderDemoForm>;
+    orderLines: OrderLine[];
+  } | null>(null);
   const [orderTakerModalOpen, setOrderTakerModalOpen] = useState(false);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [constructionModalOpen, setConstructionModalOpen] = useState(false);
@@ -517,18 +522,15 @@ const FeaturePlaceholder = () => {
       });
     }
 
-    navigate("/orders/inbound-detail", {
-      state: {
-        kind,
-        scope,
-        groupNo,
-        location: String(locationCell ?? "").trim(),
-        customer: String(customerCell ?? "").trim(),
-        site: String(siteCell ?? "").trim(),
-        time: String(timeCell ?? "").trim(),
-        driver: String(driverCell ?? "").trim(),
-        items
-      }
+    openOrderCreatePrefilledInNewTab({
+      kind,
+      groupNo,
+      location: String(locationCell ?? "").trim(),
+      customer: String(customerCell ?? "").trim(),
+      site: String(siteCell ?? "").trim(),
+      time: String(timeCell ?? "").trim(),
+      driver: String(driverCell ?? "").trim(),
+      items
     });
   };
 
@@ -722,12 +724,103 @@ const FeaturePlaceholder = () => {
     return `C-${n}`;
   };
 
+  type OrderDetailPrefillPayload = {
+    kind: "搬入" | "引取";
+    groupNo: string;
+    location: string;
+    customer: string;
+    site: string;
+    time: string;
+    driver: string;
+    items: Array<{ machineName: string; machineNo: string; quantity: string }>;
+  };
+
+  const ORDER_DETAIL_PREFILL_PREFIX = "demo.orders.orderDetailPrefill.";
+
+  const parseTimeRangeFromCell = (value: string): { from: string; to: string } => {
+    const v = (value ?? "").trim();
+    if (!v) return { from: "", to: "" };
+    const matches = Array.from(v.matchAll(/(\d{1,2})\s*:\s*(\d{2})/g)).map((m) => {
+      const hh = String(m[1]).padStart(2, "0");
+      const mm = String(m[2]).padStart(2, "0");
+      return `${hh}:${mm}`;
+    });
+    if (matches.length >= 2) return { from: matches[0] ?? "", to: matches[1] ?? "" };
+    if (matches.length === 1) return { from: matches[0] ?? "", to: "" };
+    return { from: "", to: "" };
+  };
+
+  const openOrderCreatePrefilledInNewTab = (payload: OrderDetailPrefillPayload) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    try {
+      localStorage.setItem(`${ORDER_DETAIL_PREFILL_PREFIX}${id}`, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+    const base = import.meta.env.BASE_URL === "/" ? "" : String(import.meta.env.BASE_URL ?? "").replace(/\/$/, "");
+    const url = `${base}/feature/orders?dept=${encodeURIComponent(activeDepartment)}&orderDetailPrefill=${encodeURIComponent(id)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  useEffect(() => {
+    if (feature?.key !== "orders") return;
+    const qs = new URLSearchParams(location.search);
+    const id = qs.get("orderDetailPrefill");
+    if (!id) return;
+
+    const raw = localStorage.getItem(`${ORDER_DETAIL_PREFILL_PREFIX}${id}`);
+    if (!raw) return;
+    let parsed: OrderDetailPrefillPayload | null = null;
+    try {
+      parsed = JSON.parse(raw) as OrderDetailPrefillPayload;
+    } catch {
+      parsed = null;
+    }
+    if (!parsed) return;
+    try {
+      localStorage.removeItem(`${ORDER_DETAIL_PREFILL_PREFIX}${id}`);
+    } catch {
+      // ignore
+    }
+
+    setShowOrdersResults(false);
+    const siteParsed = parseSiteFromCell(parsed.site);
+    const timeParsed = parseTimeRangeFromCell(parsed.time);
+    const orderLinesPrefill: OrderLine[] = (parsed.items ?? []).map((it) => ({
+      ...createInitialOrderLine(),
+      productNo: String(it.machineNo ?? "").trim(),
+      productName1: String(it.machineName ?? "").trim(),
+      quantity: String(it.quantity ?? "").trim()
+    }));
+
+    setPendingOrderDetailOpen({
+      orderCreateType: parsed.kind,
+      orderDemoPatch: {
+        customerName: String(parsed.customer ?? "").trim(),
+        customerCode: createCustomerCode(String(parsed.customer ?? "").trim()),
+        siteName: String(siteParsed.siteName ?? "").trim() || String(parsed.site ?? "").trim(),
+        siteCode: String(siteParsed.siteId ?? "").trim(),
+        inboundTimeFrom: timeParsed.from,
+        inboundTimeTo: timeParsed.to,
+        noteDriver: String(parsed.driver ?? "").trim()
+      },
+      orderLines: orderLinesPrefill
+    });
+    setOrderCreateType(parsed.kind);
+  }, [feature?.key, location.search]);
+
   useEffect(() => {
     if (!orderCreateType) return;
     if (pendingPickupCreate) {
       setOrderDemo({ ...createInitialOrderDemoForm(), ...pendingPickupCreate.orderDemoPatch });
       setOrderLines(pendingPickupCreate.orderLines);
       setPendingPickupCreate(null);
+      return;
+    }
+    if (pendingOrderDetailOpen) {
+      setOrderDemo({ ...createInitialOrderDemoForm(), ...pendingOrderDetailOpen.orderDemoPatch });
+      setOrderLines(pendingOrderDetailOpen.orderLines);
+      setPendingOrderDetailOpen(null);
       return;
     }
     setOrderDemo(createInitialOrderDemoForm());
