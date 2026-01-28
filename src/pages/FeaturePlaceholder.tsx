@@ -2600,6 +2600,21 @@ const FeaturePlaceholder = () => {
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button
+                className="button primary"
+                type="button"
+                onClick={() => {
+                  const params = new URLSearchParams();
+                  params.set("dept", activeDepartment);
+                  if (inventoryFilter.kind) params.set("kind", inventoryFilter.kind);
+                  if (inventoryFilter.category) params.set("category", inventoryFilter.category);
+                  if (inventoryFilter.machineNo) params.set("machineNo", inventoryFilter.machineNo);
+                  if (inventoryFilter.status) params.set("status", inventoryFilter.status);
+                  navigate(`/inventory/check?${params.toString()}`);
+                }}
+              >
+                在庫検索
+              </button>
+              <button
                 className="button"
                 type="button"
                 onClick={() => setInventoryFilter({ ...initialInventoryFilter })}
