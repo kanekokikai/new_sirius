@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 export type InventoryMemoInput = {
   writer: string;
   title: string;
+  location: string;
   body: string;
 };
 
@@ -35,9 +36,16 @@ const formatDateTime = (ms: number) => {
   }
 };
 
+const daysSince = (createdAt: number) => {
+  const diff = Date.now() - createdAt;
+  if (!Number.isFinite(diff) || diff < 0) return 0;
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+};
+
 export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue, meta, onCancel, onSave }) => {
   const [writer, setWriter] = useState("");
   const [memoTitle, setMemoTitle] = useState("");
+  const [location, setLocation] = useState("");
   const [body, setBody] = useState("");
 
   const canSave = useMemo(() => {
@@ -48,8 +56,9 @@ export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue,
     if (!open) return;
     setWriter(initialValue?.writer ?? "");
     setMemoTitle(initialValue?.title ?? "");
+    setLocation(initialValue?.location ?? "");
     setBody(initialValue?.body ?? "");
-  }, [open, initialValue?.body, initialValue?.title, initialValue?.writer]);
+  }, [open, initialValue?.body, initialValue?.location, initialValue?.title, initialValue?.writer]);
 
   useEffect(() => {
     if (!open) return;
@@ -92,6 +101,12 @@ export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue,
                 {meta?.createdAt ? formatDateTime(meta.createdAt) : "-"}
               </span>
             </div>
+            <div>
+              経過:{" "}
+              <span style={{ color: "#0f172a", fontWeight: 900 }}>
+                {meta?.createdAt ? `${daysSince(meta.createdAt)}日` : "-"}
+              </span>
+            </div>
             {meta?.updatedAt ? (
               <div>
                 更新日時:{" "}
@@ -100,17 +115,9 @@ export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue,
             ) : null}
           </div>
 
-          <div className="filter-bar multi" style={{ marginTop: 0, gap: 10, flexWrap: "wrap" }}>
-            <div className="filter-group" style={{ minWidth: 220 }}>
-              <label>記入者</label>
-              <input
-                className="filter-input"
-                value={writer}
-                onChange={(e) => setWriter(e.target.value)}
-                placeholder="例) 鈴木"
-              />
-            </div>
-            <div className="filter-group" style={{ minWidth: 340, flex: "1 1 340px" }}>
+          {/* 1行目：タイトル（横長） */}
+          <div className="filter-bar" style={{ marginTop: 10 }}>
+            <div className="filter-group" style={{ width: "100%" }}>
               <label>タイトル</label>
               <input
                 className="filter-input"
@@ -121,6 +128,29 @@ export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue,
             </div>
           </div>
 
+          {/* 2行目：記入者・置場 */}
+          <div className="filter-bar multi" style={{ marginTop: 10, gap: 10, flexWrap: "wrap" }}>
+            <div className="filter-group" style={{ minWidth: 220 }}>
+              <label>記入者</label>
+              <input
+                className="filter-input"
+                value={writer}
+                onChange={(e) => setWriter(e.target.value)}
+                placeholder="例) 鈴木"
+              />
+            </div>
+            <div className="filter-group" style={{ minWidth: 260, flex: "1 1 260px" }}>
+              <label>置場</label>
+              <input
+                className="filter-input"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="例) 千葉北"
+              />
+            </div>
+          </div>
+
+          {/* 3行目：内容 */}
           <div className="filter-bar" style={{ marginTop: 10 }}>
             <div className="filter-group" style={{ width: "100%" }}>
               <label>内容</label>
@@ -143,7 +173,14 @@ export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue,
             className="button primary"
             type="button"
             disabled={!canSave}
-            onClick={() => onSave({ writer: writer.trim(), title: memoTitle.trim(), body: body.trim() })}
+            onClick={() =>
+              onSave({
+                writer: writer.trim(),
+                title: memoTitle.trim(),
+                location: location.trim(),
+                body: body.trim()
+              })
+            }
           >
             保存
           </button>

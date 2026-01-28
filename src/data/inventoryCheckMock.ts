@@ -27,6 +27,7 @@ export type InventoryCheckRow = {
     id: string; // 管理番号（例: #0001）
     writer: string;
     title: string;
+    location: string; // 置場
     body: string;
     createdAt: number;
     updatedAt: number;
@@ -35,6 +36,7 @@ export type InventoryCheckRow = {
     id: string; // 管理番号（例: #0001）
     writer: string;
     title: string;
+    location: string; // 置場
     body: string;
     createdAt: number;
     updatedAt: number;
@@ -43,6 +45,7 @@ export type InventoryCheckRow = {
     id: string; // 管理番号（例: #0001）
     writer: string;
     title: string;
+    location: string; // 置場
     body: string;
     createdAt: number;
     updatedAt: number;

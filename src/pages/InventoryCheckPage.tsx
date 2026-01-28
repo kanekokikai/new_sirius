@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { InboundPdfTable } from "../components/InboundPdfTable";
 import { OutboundInProgressModal } from "../components/OutboundInProgressModal";
 import { InventoryMemoModal, InventoryMemoInput, InventoryMemoMeta } from "../components/InventoryMemoModal";
+import { ConfirmMoveModal } from "../components/ConfirmMoveModal";
 import {
   inventoryCheckColumns,
   inventoryCheckMockRows,
@@ -63,6 +64,7 @@ const allMoveFields: readonly MoveField[] = [
 type MemoKind = "repair" | "maintenance" | "usedSale";
 type PendingMove = { machineNo: string; to: MoveField };
 type EditMemo = { machineNo: string; field: MoveField };
+type PendingWarehouseConfirm = { machineNo: string; to: MoveField; toLabel: string };
 
 const MEMO_COUNTER_PREFIX = "demo.inventory.memoCounter.";
 const nextMemoId = (kind: MemoKind) => {
@@ -90,6 +92,7 @@ const InventoryCheckPage = () => {
   const [memoKind, setMemoKind] = useState<MemoKind>("repair");
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
   const [editMemo, setEditMemo] = useState<EditMemo | null>(null);
+  const [warehouseConfirm, setWarehouseConfirm] = useState<PendingWarehouseConfirm | null>(null);
 
   const params = new URLSearchParams(location.search);
   const dept = params.get("dept") ?? "";
@@ -162,16 +165,16 @@ const InventoryCheckPage = () => {
     const row = rows.find((r) => r.machineNo === target.machineNo);
     if (!row) return null;
     if (target.field === "repairing" && row.repairMemo) {
-      const { writer, title, body } = row.repairMemo;
-      return { writer, title, body };
+      const { writer, title, location, body } = row.repairMemo;
+      return { writer, title, location, body };
     }
     if (target.field === "maintaining" && row.maintenanceMemo) {
-      const { writer, title, body } = row.maintenanceMemo;
-      return { writer, title, body };
+      const { writer, title, location, body } = row.maintenanceMemo;
+      return { writer, title, location, body };
     }
     if (target.field === "usedSalePlanned" && row.usedSaleMemo) {
-      const { writer, title, body } = row.usedSaleMemo;
-      return { writer, title, body };
+      const { writer, title, location, body } = row.usedSaleMemo;
+      return { writer, title, location, body };
     }
     return null;
   }, [editMemo, rows]);
@@ -302,27 +305,9 @@ const InventoryCheckPage = () => {
                     return;
                   }
 
-                  // warehouse move: apply immediately
-                  setRows((prev) =>
-                    prev.map((r) => {
-                      if (r.machineNo !== row.machineNo) return r;
-                      const next: InventoryCheckRow = { ...r };
-                      for (const f of allMoveFields) (next as any)[f] = 0;
-                      (next as any)[field] = 1;
-                      next.repairMemo = null;
-                      next.maintenanceMemo = null;
-                      next.usedSaleMemo = null;
-                      next.loaned = 0;
-                      next.returnDueDate = "";
-                      next.customer = "";
-                      next.orderTaker = "";
-                      next.site = "";
-                      next.siteContact = "";
-                      next.startDate = "";
-                      next.stock = Math.max(1, next.stock || 0);
-                      return next;
-                    })
-                  );
+                  // warehouse move: confirm popup
+                  const toLabel = inventoryCheckColumns[colIndex] ?? "移動先";
+                  setWarehouseConfirm({ machineNo: row.machineNo, to: field, toLabel });
                 } catch {
                   // ignore
                 }
@@ -439,7 +424,8 @@ const InventoryCheckPage = () => {
               next.repairMemo = null;
               next.maintenanceMemo = null;
               next.usedSaleMemo = null;
-              if (to === "repairing") next.repairMemo = { id: nextMemoId("repair"), ...memo, createdAt: now, updatedAt: now };
+              if (to === "repairing")
+                next.repairMemo = { id: nextMemoId("repair"), ...memo, createdAt: now, updatedAt: now };
               if (to === "maintaining")
                 next.maintenanceMemo = { id: nextMemoId("maintenance"), ...memo, createdAt: now, updatedAt: now };
               if (to === "usedSalePlanned")
@@ -460,6 +446,40 @@ const InventoryCheckPage = () => {
           setMemoModalOpen(false);
           setPendingMove(null);
           setEditMemo(null);
+        }}
+      />
+
+      <ConfirmMoveModal
+        open={Boolean(warehouseConfirm)}
+        title="在庫移動確認"
+        message={`${warehouseConfirm?.toLabel ?? ""}に移動しますか？`}
+        okLabel="OK"
+        cancelLabel="キャンセル"
+        onCancel={() => setWarehouseConfirm(null)}
+        onOk={() => {
+          const conf = warehouseConfirm;
+          if (!conf) return;
+          setRows((prev) =>
+            prev.map((r) => {
+              if (r.machineNo !== conf.machineNo) return r;
+              const next: InventoryCheckRow = { ...r };
+              for (const f of allMoveFields) (next as any)[f] = 0;
+              (next as any)[conf.to] = 1;
+              next.repairMemo = null;
+              next.maintenanceMemo = null;
+              next.usedSaleMemo = null;
+              next.loaned = 0;
+              next.returnDueDate = "";
+              next.customer = "";
+              next.orderTaker = "";
+              next.site = "";
+              next.siteContact = "";
+              next.startDate = "";
+              next.stock = Math.max(1, next.stock || 0);
+              return next;
+            })
+          );
+          setWarehouseConfirm(null);
         }}
       />
     </div>

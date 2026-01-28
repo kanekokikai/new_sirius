@@ -37,6 +37,8 @@ import { TimeRangeEditModal } from "../components/TimeRangeEditModal";
 import { FactoryNoteEditModal } from "../components/FactoryNoteEditModal";
 import { TransportFeeEditModal } from "../components/TransportFeeEditModal";
 import { VehicleSizeEditModal } from "../components/VehicleSizeEditModal";
+import { MoveOrdersResultsTable } from "../components/MoveOrdersResultsTable";
+import { MoveOrderCreateModal } from "../components/MoveOrderCreateModal";
 import {
   machineNoOptions,
   vehicleSizeOptions,
@@ -1212,6 +1214,8 @@ const FeaturePlaceholder = () => {
     feature.key === "orders" && ordersFilter.kinds.length === 1 && ordersFilter.kinds[0] === "引取";
   const shouldShowOrdersPdfResult = shouldShowInboundOrdersPdfResult || shouldShowPickupOrdersPdfResult;
   const ordersPdfKindLabel: "搬入" | "引取" = shouldShowInboundOrdersPdfResult ? "搬入" : "引取";
+  const shouldShowMoveOrdersResult =
+    feature.key === "orders" && ordersFilter.kinds.length === 1 && ordersFilter.kinds[0] === "移動";
 
   const hasInboundPdf = feature.key === "orders" && ordersFilter.kinds.includes("搬入");
   const hasPickupPdf = feature.key === "orders" && ordersFilter.kinds.includes("引取");
@@ -2031,7 +2035,14 @@ const FeaturePlaceholder = () => {
     }
   };
 
-  const ordersSearchResultBody = shouldShowAnyOrdersPdfResult ? (
+  const ordersSearchResultBody = shouldShowMoveOrdersResult ? (
+    <div className="page" style={{ marginTop: 0 }}>
+      <p style={{ marginTop: 0, color: "#475569", fontSize: 12 }}>
+        検索条件「移動」選択時のデモ表示（表の見た目のみ再現）
+      </p>
+      <MoveOrdersResultsTable />
+    </div>
+  ) : shouldShowAnyOrdersPdfResult ? (
     <div className="page" style={{ marginTop: 0 }}>
       <p style={{ marginTop: 0, color: "#475569", fontSize: 12 }}>
         検索条件「{ordersPdfTitleLabel}」選択時のデモ表示（PDF/画像の表を再現）※場所セルをダブルクリックで場所変更モーダル
@@ -3870,7 +3881,16 @@ const FeaturePlaceholder = () => {
             }}
           />
         )}
-        {feature.key === "orders" && orderCreateType && (
+        {feature.key === "orders" && orderCreateType === "移動" && (
+          <MoveOrderCreateModal
+            open={true}
+            onClose={() => setOrderCreateType(null)}
+            onCreate={() => {
+              // デモ: 保存処理は未実装（必要ならAPI接続/一覧追加を実装）
+            }}
+          />
+        )}
+        {feature.key === "orders" && orderCreateType && orderCreateType !== "移動" && (
           <div className="modal-overlay order-create-overlay" role="dialog" aria-modal="true">
             <div className="modal order-create-modal">
               <div className="modal-header">
