@@ -38,7 +38,6 @@ import { FactoryNoteEditModal } from "../components/FactoryNoteEditModal";
 import { TransportFeeEditModal } from "../components/TransportFeeEditModal";
 import { VehicleSizeEditModal } from "../components/VehicleSizeEditModal";
 import { MoveOrdersResultsTable } from "../components/MoveOrdersResultsTable";
-import { MoveOrderCreateModal } from "../components/MoveOrderCreateModal";
 import {
   machineNoOptions,
   vehicleSizeOptions,
@@ -2860,7 +2859,7 @@ const FeaturePlaceholder = () => {
                 }}
                 onClick={() => {
                   setShowOrdersResults(false);
-                  setOrderCreateType("移動");
+                  navigate("/orders/move-create");
                 }}
               >
                 {"移動\n受注作成"}
@@ -3878,15 +3877,6 @@ const FeaturePlaceholder = () => {
               setTransportFeeModalOpen(false);
               setTransportFeeTargetRow(null);
               setTransportFeeInitial("");
-            }}
-          />
-        )}
-        {feature.key === "orders" && orderCreateType === "移動" && (
-          <MoveOrderCreateModal
-            open={true}
-            onClose={() => setOrderCreateType(null)}
-            onCreate={() => {
-              // デモ: 保存処理は未実装（必要ならAPI接続/一覧追加を実装）
             }}
           />
         )}

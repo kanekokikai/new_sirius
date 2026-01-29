@@ -1293,6 +1293,58 @@ th {
   vertical-align: top;
 }
 
+/* ===== Move order create: search-result-like editable row ===== */
+.move-order-create-table td {
+  padding: 0; /* input がセルいっぱいに入るように */
+}
+
+.move-order-create-table .move-order-actions-row td {
+  padding: 8px;
+  vertical-align: top;
+  background: #ffffff;
+  border: 0;
+}
+
+/* 操作行の入力フォームは通常の枠線を使う（filter-input のデフォルトに戻す） */
+
+.move-order-create-wrap {
+  /* 全体を囲む大枠（カード風の枠線）を消す */
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.move-order-actions-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.move-order-cell-input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  padding: 8px;
+  font: inherit;
+  background: #ffffff;
+  resize: none; /* textarea のサイズ変更を抑止（表レイアウト維持） */
+  line-height: 1.25;
+  overflow: hidden; /* autosize 時にスクロールバーを出さない */
+}
+
+.move-order-cell-stack {
+  display: grid;
+  gap: 6px;
+}
+
+.move-order-cell-action {
+  padding: 10px 12px;
+  font-size: 15px;
+}
+
+.move-order-cell-input:focus {
+  background: #eff6ff;
+}
+
 .move-orders-results-table th {
   background: linear-gradient(180deg, #e8f0ff, #eef6ff);
   color: #0f172a;
@@ -1464,7 +1516,7 @@ th {
 
 .move-order-product-row {
   display: grid;
-  grid-template-columns: 1fr 90px;
+  grid-template-columns: 1fr 72px 72px;
   gap: 10px;
   align-items: center;
 }
