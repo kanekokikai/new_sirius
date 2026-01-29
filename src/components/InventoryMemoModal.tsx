@@ -5,17 +5,24 @@ export type InventoryMemoInput = {
   title: string;
   location: string;
   body: string;
+  /** 修理用（デモ） */
+  repairStartDate?: string; // yyyy-mm-dd
+  repairEndPlannedDate?: string; // yyyy-mm-dd
 };
 
 export type InventoryMemoMeta = {
   id?: string | null;
   createdAt?: number | null;
   updatedAt?: number | null;
+  /** 在庫移動の完了日（デモ） */
+  completedAt?: number | null;
 };
 
 type Props = {
   open: boolean;
   title: string;
+  /** true の場合、「開始日 ～ 終了予定日」を表示（修理モーダル用） */
+  showRepairDateRange?: boolean;
   initialValue?: InventoryMemoInput | null;
   meta?: InventoryMemoMeta;
   onCancel: () => void;
@@ -42,11 +49,34 @@ const daysSince = (createdAt: number) => {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 };
 
-export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue, meta, onCancel, onSave }) => {
+const toDateInputValue = (ms: number) => {
+  try {
+    const d = new Date(ms);
+    const pad2 = (n: number) => String(n).padStart(2, "0");
+    const y = d.getFullYear();
+    const m = pad2(d.getMonth() + 1);
+    const day = pad2(d.getDate());
+    return `${y}-${m}-${day}`;
+  } catch {
+    return "";
+  }
+};
+
+export const InventoryMemoModal: React.FC<Props> = ({
+  open,
+  title,
+  showRepairDateRange = false,
+  initialValue,
+  meta,
+  onCancel,
+  onSave
+}) => {
   const [writer, setWriter] = useState("");
   const [memoTitle, setMemoTitle] = useState("");
   const [location, setLocation] = useState("");
   const [body, setBody] = useState("");
+  const [repairStartDate, setRepairStartDate] = useState("");
+  const [repairEndPlannedDate, setRepairEndPlannedDate] = useState("");
 
   const canSave = useMemo(() => {
     return Boolean(writer.trim() && memoTitle.trim() && body.trim());
@@ -59,6 +89,24 @@ export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue,
     setLocation(initialValue?.location ?? "");
     setBody(initialValue?.body ?? "");
   }, [open, initialValue?.body, initialValue?.location, initialValue?.title, initialValue?.writer]);
+
+  useEffect(() => {
+    if (!open) return;
+    const fallbackStart = meta?.createdAt ? toDateInputValue(meta.createdAt) : "";
+    if (showRepairDateRange) {
+      setRepairStartDate(initialValue?.repairStartDate ?? fallbackStart);
+      setRepairEndPlannedDate(initialValue?.repairEndPlannedDate ?? "");
+    } else {
+      setRepairStartDate("");
+      setRepairEndPlannedDate("");
+    }
+  }, [
+    open,
+    initialValue?.repairEndPlannedDate,
+    initialValue?.repairStartDate,
+    meta?.createdAt,
+    showRepairDateRange
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -107,6 +155,12 @@ export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue,
                 {meta?.createdAt ? `${daysSince(meta.createdAt)}日` : "-"}
               </span>
             </div>
+            <div>
+              完了日:{" "}
+              <span style={{ color: "#0f172a", fontWeight: 900 }}>
+                {meta?.completedAt ? formatDateTime(meta.completedAt) : "-"}
+              </span>
+            </div>
             {meta?.updatedAt ? (
               <div>
                 更新日時:{" "}
@@ -150,6 +204,32 @@ export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue,
             </div>
           </div>
 
+          {/* 修理用：開始日～終了予定日 */}
+          {showRepairDateRange && (
+            <div className="filter-bar" style={{ marginTop: 10 }}>
+              <div className="filter-group" style={{ width: "100%" }}>
+                <label>開始日 ～ 終了予定日</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <input
+                    className="filter-input"
+                    style={{ width: 170 }}
+                    type="date"
+                    value={repairStartDate}
+                    onChange={(e) => setRepairStartDate(e.target.value)}
+                  />
+                  <div style={{ color: "#64748b", fontWeight: 900 }}>～</div>
+                  <input
+                    className="filter-input"
+                    style={{ width: 170 }}
+                    type="date"
+                    value={repairEndPlannedDate}
+                    onChange={(e) => setRepairEndPlannedDate(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 3行目：内容 */}
           <div className="filter-bar" style={{ marginTop: 10 }}>
             <div className="filter-group" style={{ width: "100%" }}>
@@ -174,12 +254,23 @@ export const InventoryMemoModal: React.FC<Props> = ({ open, title, initialValue,
             type="button"
             disabled={!canSave}
             onClick={() =>
-              onSave({
-                writer: writer.trim(),
-                title: memoTitle.trim(),
-                location: location.trim(),
-                body: body.trim()
-              })
+              onSave(
+                showRepairDateRange
+                  ? {
+                      writer: writer.trim(),
+                      title: memoTitle.trim(),
+                      location: location.trim(),
+                      body: body.trim(),
+                      repairStartDate: repairStartDate || undefined,
+                      repairEndPlannedDate: repairEndPlannedDate || undefined
+                    }
+                  : {
+                      writer: writer.trim(),
+                      title: memoTitle.trim(),
+                      location: location.trim(),
+                      body: body.trim()
+                    }
+              )
             }
           >
             保存

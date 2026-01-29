@@ -29,6 +29,11 @@ export type InventoryCheckRow = {
     title: string;
     location: string; // 置場
     body: string;
+    /** 修理用（デモ） */
+    repairStartDate?: string; // yyyy-mm-dd
+    repairEndPlannedDate?: string; // yyyy-mm-dd
+    /** 在庫移動（保存で移動確定）した時刻（デモ） */
+    completedAt?: number;
     createdAt: number;
     updatedAt: number;
   } | null;
@@ -38,6 +43,8 @@ export type InventoryCheckRow = {
     title: string;
     location: string; // 置場
     body: string;
+    /** 在庫移動（保存で移動確定）した時刻（デモ） */
+    completedAt?: number;
     createdAt: number;
     updatedAt: number;
   } | null;
@@ -47,6 +54,8 @@ export type InventoryCheckRow = {
     title: string;
     location: string; // 置場
     body: string;
+    /** 在庫移動（保存で移動確定）した時刻（デモ） */
+    completedAt?: number;
     createdAt: number;
     updatedAt: number;
   } | null;

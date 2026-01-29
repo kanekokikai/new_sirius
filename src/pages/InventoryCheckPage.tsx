@@ -89,6 +89,7 @@ const InventoryCheckPage = () => {
   const [rows, setRows] = useState<InventoryCheckRow[]>(inventoryCheckMockRows);
   const [dragOver, setDragOver] = useState<{ machineNo: string; colIndex: number } | null>(null);
   const [memoModalOpen, setMemoModalOpen] = useState(false);
+  const [memoOpenedAt, setMemoOpenedAt] = useState<number | null>(null);
   const [memoKind, setMemoKind] = useState<MemoKind>("repair");
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
   const [editMemo, setEditMemo] = useState<EditMemo | null>(null);
@@ -145,17 +146,28 @@ const InventoryCheckPage = () => {
     const row = rows.find((r) => r.machineNo === target.machineNo);
     if (!row) return null;
     if (target.field === "repairing" && row.repairMemo) {
-      return { id: row.repairMemo.id, createdAt: row.repairMemo.createdAt, updatedAt: row.repairMemo.updatedAt };
+      return {
+        id: row.repairMemo.id,
+        createdAt: row.repairMemo.createdAt,
+        updatedAt: row.repairMemo.updatedAt,
+        completedAt: row.repairMemo.completedAt ?? row.repairMemo.createdAt
+      };
     }
     if (target.field === "maintaining" && row.maintenanceMemo) {
       return {
         id: row.maintenanceMemo.id,
         createdAt: row.maintenanceMemo.createdAt,
-        updatedAt: row.maintenanceMemo.updatedAt
+        updatedAt: row.maintenanceMemo.updatedAt,
+        completedAt: row.maintenanceMemo.completedAt ?? row.maintenanceMemo.createdAt
       };
     }
     if (target.field === "usedSalePlanned" && row.usedSaleMemo) {
-      return { id: row.usedSaleMemo.id, createdAt: row.usedSaleMemo.createdAt, updatedAt: row.usedSaleMemo.updatedAt };
+      return {
+        id: row.usedSaleMemo.id,
+        createdAt: row.usedSaleMemo.createdAt,
+        updatedAt: row.usedSaleMemo.updatedAt,
+        completedAt: row.usedSaleMemo.completedAt ?? row.usedSaleMemo.createdAt
+      };
     }
     return { id: null, createdAt: null, updatedAt: null };
   }, [editMemo, rows]);
@@ -165,8 +177,8 @@ const InventoryCheckPage = () => {
     const row = rows.find((r) => r.machineNo === target.machineNo);
     if (!row) return null;
     if (target.field === "repairing" && row.repairMemo) {
-      const { writer, title, location, body } = row.repairMemo;
-      return { writer, title, location, body };
+      const { writer, title, location, body, repairStartDate, repairEndPlannedDate } = row.repairMemo;
+      return { writer, title, location, body, repairStartDate, repairEndPlannedDate };
     }
     if (target.field === "maintaining" && row.maintenanceMemo) {
       const { writer, title, location, body } = row.maintenanceMemo;
@@ -178,6 +190,13 @@ const InventoryCheckPage = () => {
     }
     return null;
   }, [editMemo, rows]);
+
+  const effectiveMemoMeta: InventoryMemoMeta | undefined = useMemo(() => {
+    if (memoMeta) return memoMeta ?? undefined;
+    if (!memoModalOpen) return undefined;
+    // 新規（移動時）: 作成日時をモーダルオープン時刻で固定（開始日の自動入力にも使う）
+    return memoOpenedAt ? { id: null, createdAt: memoOpenedAt, updatedAt: null, completedAt: null } : undefined;
+  }, [memoMeta, memoModalOpen, memoOpenedAt]);
 
   const colWidths = useMemo(
     () => [
@@ -254,12 +273,14 @@ const InventoryCheckPage = () => {
 
           const hasValue = Boolean(String(value ?? "").trim());
           const isDragOver = dragOver?.machineNo === row.machineNo && dragOver?.colIndex === colIndex;
+          const isStatusField = field === "repairing" || field === "maintaining" || field === "usedSalePlanned";
 
           return (
             <div
               className={[
                 "inventory-dnd-cell",
                 hasValue ? "inventory-dnd-cell--draggable" : "inventory-dnd-cell--empty",
+                hasValue && isStatusField ? "inventory-dnd-cell--danger" : "",
                 isDragOver ? "inventory-dnd-cell--over" : ""
               ]
                 .filter(Boolean)
@@ -301,6 +322,7 @@ const InventoryCheckPage = () => {
                   if (field === "repairing" || field === "maintaining" || field === "usedSalePlanned") {
                     setPendingMove({ machineNo: row.machineNo, to: field });
                     setMemoKind(field === "repairing" ? "repair" : field === "maintaining" ? "maintenance" : "usedSale");
+                    setMemoOpenedAt(Date.now());
                     setMemoModalOpen(true);
                     return;
                   }
@@ -330,6 +352,7 @@ const InventoryCheckPage = () => {
             setPendingMove(null);
             setEditMemo({ machineNo: row.machineNo, field });
             setMemoKind(field === "repairing" ? "repair" : field === "maintaining" ? "maintenance" : "usedSale");
+            setMemoOpenedAt(Date.now());
             setMemoModalOpen(true);
             return;
           }
@@ -363,13 +386,15 @@ const InventoryCheckPage = () => {
               ? "整備内容モーダル（デモ）"
               : "中古販売内容モーダル（デモ）"
         }
+        showRepairDateRange={memoKind === "repair"}
         initialValue={memoInitialValue}
-        meta={memoMeta ?? undefined}
+        meta={effectiveMemoMeta}
         onCancel={() => {
           // キャンセル: 移動は確定しない（＝元の位置のまま）
           setMemoModalOpen(false);
           setPendingMove(null);
           setEditMemo(null);
+          setMemoOpenedAt(null);
         }}
         onSave={(memo: InventoryMemoInput) => {
           const move = pendingMove;
@@ -386,23 +411,27 @@ const InventoryCheckPage = () => {
                 if (to === "repairing") {
                   const createdAt = next.repairMemo?.createdAt ?? now;
                   const id = next.repairMemo?.id ?? nextMemoId("repair");
-                  next.repairMemo = { id, ...memo, createdAt, updatedAt: now };
+                  const completedAt = next.repairMemo?.completedAt ?? createdAt;
+                  next.repairMemo = { id, ...memo, createdAt, updatedAt: now, completedAt };
                 }
                 if (to === "maintaining") {
                   const createdAt = next.maintenanceMemo?.createdAt ?? now;
                   const id = next.maintenanceMemo?.id ?? nextMemoId("maintenance");
-                  next.maintenanceMemo = { id, ...memo, createdAt, updatedAt: now };
+                  const completedAt = next.maintenanceMemo?.completedAt ?? createdAt;
+                  next.maintenanceMemo = { id, ...memo, createdAt, updatedAt: now, completedAt };
                 }
                 if (to === "usedSalePlanned") {
                   const createdAt = next.usedSaleMemo?.createdAt ?? now;
                   const id = next.usedSaleMemo?.id ?? nextMemoId("usedSale");
-                  next.usedSaleMemo = { id, ...memo, createdAt, updatedAt: now };
+                  const completedAt = next.usedSaleMemo?.completedAt ?? createdAt;
+                  next.usedSaleMemo = { id, ...memo, createdAt, updatedAt: now, completedAt };
                 }
                 return next;
               })
             );
             setMemoModalOpen(false);
             setEditMemo(null);
+            setMemoOpenedAt(null);
             return;
           }
 
@@ -421,15 +450,17 @@ const InventoryCheckPage = () => {
               for (const f of allMoveFields) (next as any)[f] = 0;
               (next as any)[to] = 1;
               const now = Date.now();
+              const createdAt = memoOpenedAt ?? now;
+              const completedAt = now; // 在庫移動（保存で移動確定）した時刻
               next.repairMemo = null;
               next.maintenanceMemo = null;
               next.usedSaleMemo = null;
               if (to === "repairing")
-                next.repairMemo = { id: nextMemoId("repair"), ...memo, createdAt: now, updatedAt: now };
+                next.repairMemo = { id: nextMemoId("repair"), ...memo, createdAt, updatedAt: now, completedAt };
               if (to === "maintaining")
-                next.maintenanceMemo = { id: nextMemoId("maintenance"), ...memo, createdAt: now, updatedAt: now };
+                next.maintenanceMemo = { id: nextMemoId("maintenance"), ...memo, createdAt, updatedAt: now, completedAt };
               if (to === "usedSalePlanned")
-                next.usedSaleMemo = { id: nextMemoId("usedSale"), ...memo, createdAt: now, updatedAt: now };
+                next.usedSaleMemo = { id: nextMemoId("usedSale"), ...memo, createdAt, updatedAt: now, completedAt };
 
               next.loaned = 0;
               next.returnDueDate = "";
@@ -446,6 +477,7 @@ const InventoryCheckPage = () => {
           setMemoModalOpen(false);
           setPendingMove(null);
           setEditMemo(null);
+          setMemoOpenedAt(null);
         }}
       />
 

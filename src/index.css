@@ -532,6 +532,10 @@ table {
   color: #1d4ed8; /* blue-700 */
 }
 
+.inbound-pdf-table.inventory-table td .inventory-dnd-cell--draggable.inventory-dnd-cell--danger {
+  color: #dc2626; /* red-600 */
+}
+
 .inbound-pdf-table.inventory-table td .inventory-dnd-cell--draggable:active {
   cursor: grabbing;
 }
