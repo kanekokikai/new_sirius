@@ -16,6 +16,7 @@ import {
   loadInboundRows,
   loadPickupDraft,
   loadPickupRows,
+  clearInboundPersisted,
   saveInboundDraft,
   saveInboundRows,
   savePickupDraft,
@@ -2047,9 +2048,25 @@ const FeaturePlaceholder = () => {
     </div>
   ) : shouldShowAnyOrdersPdfResult ? (
     <div className="page" style={{ marginTop: 0 }}>
-      <p style={{ marginTop: 0, color: "#475569", fontSize: 12 }}>
-        検索条件「{ordersPdfTitleLabel}」選択時のデモ表示（PDF/画像の表を再現）※場所セルをダブルクリックで場所変更モーダル
-      </p>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+        <p style={{ marginTop: 0, marginBottom: 0, color: "#475569", fontSize: 12 }}>
+          検索条件「{ordersPdfTitleLabel}」選択時のデモ表示（PDF/画像の表を再現）※場所セルをダブルクリックで場所変更モーダル
+        </p>
+        {ordersPdfKindLabel === "搬入" && (
+          <button
+            className="button"
+            type="button"
+            onClick={() => {
+              clearInboundPersisted();
+              setInboundDraft(null);
+              setInboundRows(loadInboundRows(inboundOrderSearchRawRows));
+            }}
+            title="サーバ更新された最新のデモ行を読み直す（ローカル保存分は破棄）"
+          >
+            デモ再読込
+          </button>
+        )}
+      </div>
       <div
         className={draggingDraftKind ? "orders-drop-target" : undefined}
         data-active={isDragOverOrdersTable ? "1" : "0"}

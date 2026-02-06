@@ -127,6 +127,11 @@ export const saveInboundRows = (rows: string[][]) => {
   localStorage.setItem(KEY_INBOUND_ROWS, JSON.stringify(rows));
 };
 
+export const clearInboundPersisted = () => {
+  localStorage.removeItem(KEY_INBOUND_ROWS);
+  localStorage.removeItem(KEY_INBOUND_DRAFT);
+};
+
 export const loadPickupRows = (fallback: string[][]): string[][] => {
   const parsed = safeParseJson(localStorage.getItem(KEY_PICKUP_ROWS));
   if (isStringArrayArray(parsed)) {
