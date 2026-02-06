@@ -68,6 +68,35 @@ const migrateRowToV2 = (row: string[]): string[] => {
 
 const migrateRowsToV2 = (rows: string[][]): string[][] => rows.map((r) => migrateRowToV2(r));
 
+// Hotfix for demo data that got persisted with older column shifts.
+// We keep this very small and surgical to avoid impacting real data.
+const applyInboundRowsHotfixes = (rows: string[][]): string[][] => {
+  // v2 columns (TARGET_COLS=16):
+  // [3]場所 [4]機械名 [7]車輛 [8]ﾚｯｶｰ [9]運転手 [10]会社名 [11]現場 [12]時間
+  return rows.map((r) => {
+    const row = [...r];
+    const company = String(row[10] ?? "").trim();
+    const site = String(row[11] ?? "").trim();
+    const time = String(row[12] ?? "").trim();
+    const machine = String(row[4] ?? "").trim();
+
+    // Fix: サンレントマシン工事 / 水戸市 / 8:30 の行で、列ズレにより
+    // ﾚｯｶｰに「6t」、運転手に「有」が入ってしまうケースを補正する
+    if (
+      company === "サンレントマシン工事" &&
+      site === "水戸市" &&
+      time.startsWith("8:30") &&
+      machine === "SR30本体"
+    ) {
+      row[7] = "大型可"; // 車輛
+      row[8] = "有"; // ﾚｯｶｰ
+      if (String(row[9] ?? "").trim() === "有") row[9] = ""; // 運転手
+    }
+
+    return row;
+  });
+};
+
 const safeParseJson = (raw: string | null): unknown => {
   if (!raw) return null;
   try {
@@ -85,12 +114,12 @@ const isStringArrayArray = (v: unknown): v is string[][] => {
 export const loadInboundRows = (fallback: string[][]): string[][] => {
   const parsed = safeParseJson(localStorage.getItem(KEY_INBOUND_ROWS));
   if (isStringArrayArray(parsed)) {
-    const migrated = migrateRowsToV2(parsed);
+    const migrated = applyInboundRowsHotfixes(migrateRowsToV2(parsed));
     // persist migration to avoid mixed formats causing "見え方が壊れる"
     saveInboundRows(migrated);
     return migrated.map((r) => [...r]);
   }
-  const migratedFallback = migrateRowsToV2(fallback);
+  const migratedFallback = applyInboundRowsHotfixes(migrateRowsToV2(fallback));
   return migratedFallback.map((r) => [...r]);
 };
 

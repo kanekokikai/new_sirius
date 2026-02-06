@@ -27,6 +27,11 @@ a {
   padding: 24px;
 }
 
+.app-shell.app-shell--wide {
+  max-width: none;
+  width: 100%;
+}
+
 /* ===== App layout (sidebar) ===== */
 .layout-root {
   min-height: 100vh;
@@ -457,6 +462,220 @@ table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 8px;
+}
+
+/* ===== Dispatch: Truck plan (spreadsheet-like) ===== */
+.truck-plan-table {
+  table-layout: fixed;
+  font-size: 11px;
+  /* 100% 幅に潰れないよう、内容幅で横スクロールさせる */
+  display: inline-table;
+  width: auto;
+  min-width: max-content; /* fit to columns like a sheet */
+  max-width: none;
+  --truck-plan-line: #94a3b8; /* slate-400: 罫線を濃くして視認性UP */
+}
+
+.truck-plan-table th,
+.truck-plan-table td {
+  padding: 4px 6px;
+  border: 1px solid var(--truck-plan-line); /* 濃い罫線 */
+  vertical-align: middle;
+  background: #fff;
+}
+
+.truck-plan-table th {
+  background: #f1f3f4;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.truck-plan-table td {
+  white-space: nowrap;
+}
+
+/* 仕事枠の列幅を明示（table-layout: fixed 対策） */
+.truck-plan-table th:nth-child(n + 3),
+.truck-plan-table td:nth-child(n + 3) {
+  /* 仕事ブロックを“今の倍”の幅に */
+  width: 23.616em; /* 19.68em × 1.2 */
+  min-width: 23.616em;
+  max-width: 23.616em;
+}
+
+/* Sticky left columns (category + name) */
+.truck-plan-table th:nth-child(1),
+.truck-plan-table td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  width: 72px;
+  min-width: 72px;
+}
+
+.truck-plan-table th:nth-child(2),
+.truck-plan-table td:nth-child(2) {
+  position: sticky;
+  left: 72px;
+  z-index: 4;
+  width: 120px;
+  min-width: 120px;
+  box-shadow: 2px 0 0 var(--truck-plan-line);
+}
+
+.truck-plan-table td:nth-child(1),
+.truck-plan-table td:nth-child(2) {
+  z-index: 3;
+}
+
+.truck-plan-table th:nth-child(1),
+.truck-plan-table th:nth-child(2) {
+  z-index: 6;
+}
+
+.truck-plan-category {
+  background: #f6c5cc !important; /* スクショ左端のピンク帯 */
+  font-weight: 800;
+  text-align: left;
+}
+
+.truck-plan-name {
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.truck-plan-block-cell {
+  padding: 0;
+  min-width: 0;
+}
+
+.truck-plan-block {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  width: 100%;
+  /* 2行（=4分割の上下）で“ほぼ2文字分”の高さにする */
+  height: 3.168em; /* 2.64em × 1.2 */
+}
+
+.truck-plan-block__cell {
+  padding: 0 4px;
+  line-height: 1;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.truck-plan-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 100%;
+  font-weight: 900;
+  color: #64748b;
+  cursor: grab;
+  user-select: none;
+}
+
+.truck-plan-drag-handle[draggable="false"] {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.truck-plan-block-input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.truck-plan-block-input--right {
+  text-align: right;
+}
+
+.truck-plan-block-input:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+/* inner borders (2x2) */
+.truck-plan-block__tl,
+.truck-plan-block__tr {
+  border-bottom: 1px solid var(--truck-plan-line);
+}
+.truck-plan-block__tl,
+.truck-plan-block__bl {
+  border-right: 1px solid var(--truck-plan-line);
+}
+
+.truck-plan-block__tl {
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.truck-plan-block-cell--drop-ok {
+  outline: 1px dashed rgba(37, 99, 235, 0.35);
+  outline-offset: -1px;
+}
+
+.truck-plan-block-cell--drag-over {
+  outline: 2px solid rgba(37, 99, 235, 0.5);
+  outline-offset: -2px;
+}
+
+.truck-plan-block__bl {
+  white-space: nowrap;
+}
+
+.truck-plan-block__br {
+  text-align: left;
+  font-weight: 700;
+  white-space: nowrap;
+  justify-content: flex-start;
+}
+
+.truck-plan-memo-input {
+  width: 100%;
+  height: 100%;
+  min-height: 1em;
+  border: 0;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.truck-plan-memo-input:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+.truck-plan-table tbody tr:hover td {
+  background: #eff6ff; /* うっすら行ハイライト */
+}
+
+.truck-plan-table tbody tr:hover td.truck-plan-category {
+  background: #f3b2bb !important;
 }
 
 /* 搬入 受注検索結果（PDF/スプレッドシート見た目の再現用） */

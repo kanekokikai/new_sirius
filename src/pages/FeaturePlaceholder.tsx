@@ -337,6 +337,8 @@ const FeaturePlaceholder = () => {
 
   useEffect(() => {
     saveInboundRows(inboundRows);
+    // Notify other pages (e.g. truck plan) to re-merge inbound assignments immediately.
+    window.dispatchEvent(new CustomEvent("demo:inboundRowsUpdated"));
   }, [inboundRows]);
 
   useEffect(() => {
@@ -345,6 +347,8 @@ const FeaturePlaceholder = () => {
 
   useEffect(() => {
     saveInboundDraft(inboundDraft);
+    // Used for date gating of the merge (truck plan only merges when dates match).
+    window.dispatchEvent(new CustomEvent("demo:inboundDraftUpdated"));
   }, [inboundDraft]);
 
   useEffect(() => {
