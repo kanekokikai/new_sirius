@@ -24,10 +24,19 @@ export type TruckPlanRow = {
   actions: TruckPlanAction[];
 };
 
-// トラック予定指示書（フロント）は「空から作る」想定にするため、
-// ここでは固定のデモ行・デモ予定を持たせません。
-// 行が必要な場合は画面の「トラック追加」で作成、または搬入指示書の運転手名連携で生成します。
-const baseRoster: TruckPlanRow[] = [];
+// トラック予定指示書（フロント）: 初期表示でドライバー行が見えるようにロスターだけは固定で持つ。
+// ※予定（actions）は空のまま。予定は搬入受注連携 or 手入力 or トラック追加で作成する想定。
+const baseRoster: TruckPlanRow[] = [
+  { category: "特大セル", name: "小出達也", actions: [] },
+  { category: "特大セル", name: "長谷川利弘", actions: [] },
+  { category: "特大セル", name: "高木孝一", actions: [] },
+  { category: "特大セル", name: "下浅敏治★", actions: [] },
+  { category: "特大平", name: "五十嵐誠", actions: [] },
+  { category: "特大平", name: "米坂和彦", actions: [] },
+  { category: "10t エッセル", name: "若井亮", actions: [] },
+  { category: "10t セル-エッセル", name: "藤田一央", actions: [] },
+  { category: "7t セル-フォーク 2071", name: "山田太陽", actions: [] }
+];
 
 const byDate: Record<string, Partial<Record<string, TruckPlanAction[]>>> = {};
 
