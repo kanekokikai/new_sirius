@@ -560,6 +560,54 @@ table {
   height: 3.168em; /* 2.64em × 1.2 */
 }
 
+.truck-plan-block--ended {
+  background: #fee2e2; /* red-100 */
+}
+
+.truck-plan-block--ended .truck-plan-drag-handle {
+  color: #7f1d1d;
+}
+
+.truck-plan-block--ended .truck-plan-block-input,
+.truck-plan-block--ended .truck-plan-memo-input {
+  color: #7f1d1d;
+  font-weight: 800;
+}
+
+.truck-plan-context-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 160px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 14px 30px rgba(2, 6, 23, 0.18);
+  padding: 6px;
+}
+
+.truck-plan-context-menu__item {
+  appearance: none;
+  width: 100%;
+  display: block;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.truck-plan-context-menu__item:hover {
+  background: #f1f5f9;
+}
+
+.truck-plan-context-menu__item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .truck-plan-block__cell {
   padding: 0 4px;
   line-height: 1;

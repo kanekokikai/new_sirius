@@ -56,7 +56,17 @@ export const ConfirmMoveModal: React.FC<Props> = ({
           </button>
         </div>
         <div className="modal-body">
-          <p style={{ marginTop: 0, marginBottom: 0, color: "#0f172a", fontWeight: 800 }}>{message}</p>
+          <p
+            style={{
+              marginTop: 0,
+              marginBottom: 0,
+              color: "#0f172a",
+              fontWeight: 800,
+              whiteSpace: "pre-wrap"
+            }}
+          >
+            {message}
+          </p>
           <p style={{ marginTop: 8, marginBottom: 0, color: "#64748b", fontSize: 12 }}>
             EnterでOK、Escでキャンセルできます。
           </p>

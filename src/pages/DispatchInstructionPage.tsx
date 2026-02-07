@@ -11,6 +11,7 @@ import { TableSection } from "../data/featureContent";
 import { inboundOrderSearchColumns, inboundOrderSearchRawRows } from "../data/inboundOrderSearchMock";
 import { loadInboundDraft, loadInboundRows } from "../data/ordersLocalDb";
 import { getTruckPlanRowsByDate, TruckPlanAction, TruckPlanRow } from "../data/truckPlanMock";
+import { TruckPlanEndReportModal } from "../components/TruckPlanEndReportModal";
 import { Department } from "../types";
 
 const isValidInstructionKey = (key: string): key is DispatchInstructionKey =>
@@ -51,6 +52,9 @@ const loadTruckPlanDraft = (date: string): TruckPlanRow[] | null => {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return null;
+    // If an empty array was saved by an older/buggy build, treat it as "no draft"
+    // so the demo roster can still render on first view (especially in production).
+    if (parsed.length === 0) return null;
     // very light validation
     return parsed.filter(Boolean) as TruckPlanRow[];
   } catch {
@@ -64,6 +68,29 @@ const saveTruckPlanDraft = (date: string, rows: TruckPlanRow[]) => {
   } catch {
     // ignore
   }
+};
+
+/**
+ * Ensure base demo roster rows are always present, even if a draft is missing or corrupted.
+ * - Keeps user-added rows (not in base roster)
+ * - Preserves draft rows when present (actions/edits)
+ */
+const seedTruckPlanRoster = (date: string, draftRows: TruckPlanRow[] | null): TruckPlanRow[] => {
+  const base = getTruckPlanRowsByDate(date);
+  if (!draftRows || draftRows.length === 0) return base;
+
+  const byName = new Map<string, TruckPlanRow>();
+  for (const r of draftRows) {
+    if (!r || !String((r as TruckPlanRow).name ?? "").trim()) continue;
+    byName.set((r as TruckPlanRow).name, r as TruckPlanRow);
+  }
+
+  const seeded: TruckPlanRow[] = base.map((r) => byName.get(r.name) ?? r);
+  for (const r of draftRows) {
+    if (!r || !String(r.name ?? "").trim()) continue;
+    if (!base.some((b) => b.name === r.name)) seeded.push(r);
+  }
+  return seeded;
 };
 
 const composeTruckPlanTopLeft = (kind: string, size?: string) => [kind, size].filter(Boolean).join("　");
@@ -213,6 +240,38 @@ const TruckPlanTable = ({
 }) => {
   const [dragging, setDragging] = useState<{ name: string; fromIndex: number } | null>(null);
   const [dragOver, setDragOver] = useState<{ name: string; toIndex: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    name: string;
+    slotIndex: number;
+    isEnded: boolean;
+    summary: { topLeft: string; bottomLeft: string; bottomRight: string; memo: string };
+  } | null>(null);
+  const [endReportTarget, setEndReportTarget] = useState<{
+    name: string;
+    slotIndex: number;
+    mode: "end" | "unend";
+    summary: { topLeft: string; bottomLeft: string; bottomRight: string; memo: string };
+  } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [contextMenu]);
 
   const columns = useMemo(() => {
     const cols: string[] = ["区分", "氏名"];
@@ -243,6 +302,11 @@ const TruckPlanTable = ({
                 const memoValue = a?.freeText ?? "";
                 const isDropAllowed = dragging?.name === r.name && dragging.fromIndex !== i;
                 const isDragOver = dragOver?.name === r.name && dragOver.toIndex === i;
+                const isEnded = Boolean(a?.ended);
+                const endedTimeValue = String(a?.endedTime ?? "").trim();
+                const topRightValue = isEnded
+                  ? [memoValue.trim(), endedTimeValue].filter(Boolean).join(" ")
+                  : memoValue;
                 const hasContent = Boolean(
                   (a?.kind ?? "").trim() ||
                     (a?.size ?? "").trim() ||
@@ -291,7 +355,23 @@ const TruckPlanTable = ({
                       setDragging(null);
                     }}
                   >
-                    <div className="truck-plan-block" aria-label={`仕事ブロック ${i + 1}`}>
+                    <div
+                      className={["truck-plan-block", isEnded ? "truck-plan-block--ended" : ""].filter(Boolean).join(" ")}
+                      aria-label={`仕事ブロック ${i + 1}`}
+                      onContextMenu={(e) => {
+                        if (!hasContent) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          name: r.name,
+                          slotIndex: i,
+                          isEnded,
+                          summary: { topLeft, bottomLeft, bottomRight, memo: memoValue }
+                        });
+                      }}
+                    >
                       <div
                         className="truck-plan-block__cell truck-plan-block__tl"
                         title={hasContent ? "ドラッグして同じ行内で移動できます" : ""}
@@ -334,12 +414,14 @@ const TruckPlanTable = ({
                       <div className="truck-plan-block__cell truck-plan-block__tr">
                         <input
                           className="truck-plan-memo-input"
-                          value={memoValue}
+                          value={topRightValue}
                           placeholder=""
                           onChange={(e) => {
+                            if (isEnded) return;
                             onEditSlot(r.name, i, { freeText: e.target.value });
                           }}
-                          aria-label="自由入力"
+                          readOnly={isEnded}
+                          aria-label={isEnded ? "終了時間（終了報告）" : "自由入力"}
                         />
                       </div>
                       <div className="truck-plan-block__cell truck-plan-block__bl">
@@ -368,6 +450,80 @@ const TruckPlanTable = ({
           ))}
         </tbody>
       </table>
+
+      {contextMenu && (
+        <div
+          className="truck-plan-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          role="menu"
+          aria-label="仕事ブロック操作メニュー"
+          onMouseDown={(e) => {
+            // keep clicks inside menu from triggering window mousedown close before handlers run
+            e.stopPropagation();
+          }}
+        >
+          <button
+            className="truck-plan-context-menu__item"
+            type="button"
+            disabled={contextMenu.isEnded}
+            onClick={() => {
+              setEndReportTarget({
+                name: contextMenu.name,
+                slotIndex: contextMenu.slotIndex,
+                mode: "end",
+                summary: contextMenu.summary
+              });
+              setContextMenu(null);
+            }}
+          >
+            {contextMenu.isEnded ? "終了報告（済）" : "終了報告"}
+          </button>
+
+          <button
+            className="truck-plan-context-menu__item"
+            type="button"
+            disabled={!contextMenu.isEnded}
+            onClick={() => {
+              setEndReportTarget({
+                name: contextMenu.name,
+                slotIndex: contextMenu.slotIndex,
+                mode: "unend",
+                summary: contextMenu.summary
+              });
+              setContextMenu(null);
+            }}
+          >
+            終了報告解除
+          </button>
+        </div>
+      )}
+
+      <TruckPlanEndReportModal
+        open={Boolean(endReportTarget)}
+        mode={endReportTarget?.mode ?? "end"}
+        driverName={endReportTarget?.name ?? ""}
+        date={date}
+        slotIndex={endReportTarget?.slotIndex ?? 0}
+        summary={endReportTarget?.summary ?? { topLeft: "", bottomLeft: "", bottomRight: "", memo: "" }}
+        onCancel={() => setEndReportTarget(null)}
+        onConfirm={({ endTime }) => {
+          if (!endReportTarget) return;
+          if (endReportTarget.mode === "unend") {
+            onEditSlot(endReportTarget.name, endReportTarget.slotIndex, {
+              ended: false,
+              endedReportedAt: undefined,
+              endedTime: undefined
+            });
+          } else {
+            onEditSlot(endReportTarget.name, endReportTarget.slotIndex, {
+              ended: true,
+              endedReportedAt: new Date().toISOString(),
+              endedTime: endTime
+            });
+          }
+          setEndReportTarget(null);
+        }}
+      />
     </div>
   );
 };
@@ -503,7 +659,7 @@ const DispatchInstructionPage = () => {
   useEffect(() => {
     if (resolvedKey !== "truckPlan") return;
     const saved = loadTruckPlanDraft(truckPlanDate);
-    const base = saved ?? getTruckPlanRowsByDate(truckPlanDate);
+    const base = seedTruckPlanRoster(truckPlanDate, saved);
     const merged = mergeInboundIntoTruckPlanRows(truckPlanDate, base);
     setTruckPlanDraftRows(merged);
     // Persist merged result so subsequent edits build on it.
@@ -512,7 +668,7 @@ const DispatchInstructionPage = () => {
 
   const refreshTruckPlanFromInbound = () => {
     setTruckPlanDraftRows((prev) => {
-      const base = loadTruckPlanDraft(truckPlanDate) ?? prev;
+      const base = seedTruckPlanRoster(truckPlanDate, loadTruckPlanDraft(truckPlanDate) ?? prev);
       const merged = mergeInboundIntoTruckPlanRows(truckPlanDate, base);
       saveTruckPlanDraft(truckPlanDate, merged);
       return merged;

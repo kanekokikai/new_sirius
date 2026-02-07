@@ -9,6 +9,12 @@ export type TruckPlanAction = {
   freeText?: string;
   /** 例) 9:00 / 11:00 */
   time?: string;
+  /** 終了報告済み（右クリック→終了報告で true になる） */
+  ended?: boolean;
+  /** 終了報告を確定した日時（ISO文字列） */
+  endedReportedAt?: string;
+  /** 終了時間（入力した時刻、表示用。例: 15:30） */
+  endedTime?: string;
   /** 受注検索結果（搬入）からの自動反映か、手入力か */
   source?: "inbound" | "manual";
   /** source=inbound のとき、受注検索結果（搬入）のアンカー行index */
