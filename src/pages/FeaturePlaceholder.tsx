@@ -546,19 +546,20 @@ const FeaturePlaceholder = () => {
     issue: 0, // 払出（ボタン）
     status: 1, // 状態（予約/確定/払出済/キャンセル/破棄）
     groupNo: 2, // 件数（グループ番号: UIで採番）
-    location: 3, // 場所
-    machine: 4, // 機械名
-    machineNo: 5, // No.
-    quantity: 6, // 数量
-    vehicle: 7, // 車輛
-    wrecker: 8, // ﾚｯｶｰ
-    driver: 9, // 運転手
-    customer: 10, // 会社名
-    site: 11, // 現場
-    time: 12, // 時間
-    note: 13, // 備考
-    hour: 14, // アワー
-    transportFee: 15 // 回送費
+    usagePeriod: 3, // 使用期間
+    location: 4, // 場所
+    machine: 5, // 機械名
+    machineNo: 6, // No.
+    quantity: 7, // 数量
+    vehicle: 8, // 車輛
+    wrecker: 9, // ﾚｯｶｰ
+    driver: 10, // 運転手
+    customer: 11, // 会社名
+    site: 12, // 現場
+    time: 13, // 時間
+    note: 14, // 備考
+    hour: 15, // アワー
+    transportFee: 16 // 回送費
   } as const;
 
   type OrderStatus = "予約" | "確定" | "払出済" | "キャンセル" | "破棄";
@@ -2202,6 +2203,7 @@ const FeaturePlaceholder = () => {
             COL.issue,
             COL.status,
             COL.groupNo,
+            COL.usagePeriod,
             COL.location,
             COL.vehicle,
             COL.wrecker,
@@ -2469,9 +2471,24 @@ const FeaturePlaceholder = () => {
                 columns={inboundOrderSearchColumns}
                 rows={inboundDraftShownRows}
                 colWidths={inboundOrderSearchColWidths}
-                mergeColumnIndices={[0, 1, 2, 6, 7, 8, 9, 10, 11, 12, 13, 14]}
+                mergeColumnIndices={[
+                  COL.issue,
+                  COL.status,
+                  COL.groupNo,
+                  COL.usagePeriod,
+                  COL.quantity,
+                  COL.vehicle,
+                  COL.wrecker,
+                  COL.driver,
+                  COL.customer,
+                  COL.site,
+                  COL.time,
+                  COL.note,
+                  COL.hour,
+                  COL.transportFee
+                ]}
                 mergeBlankCellsWithinGroup
-                groupStartColumnIndices={[2]}
+                groupStartColumnIndices={[COL.groupNo]}
                 onCellDoubleClick={handleInboundDraftCellDoubleClick}
                 getRowProps={({ rowIndex }) => ({
                   draggable: true,
@@ -2529,9 +2546,24 @@ const FeaturePlaceholder = () => {
                 columns={inboundOrderSearchColumns}
                 rows={pickupDraftShownRows}
                 colWidths={inboundOrderSearchColWidths}
-                mergeColumnIndices={[0, 1, 2, 6, 7, 8, 9, 10, 11, 12, 13, 14]}
+                mergeColumnIndices={[
+                  COL.issue,
+                  COL.status,
+                  COL.groupNo,
+                  COL.usagePeriod,
+                  COL.quantity,
+                  COL.vehicle,
+                  COL.wrecker,
+                  COL.driver,
+                  COL.customer,
+                  COL.site,
+                  COL.time,
+                  COL.note,
+                  COL.hour,
+                  COL.transportFee
+                ]}
                 mergeBlankCellsWithinGroup
-                groupStartColumnIndices={[2]}
+                groupStartColumnIndices={[COL.groupNo]}
                 onCellDoubleClick={handlePickupDraftCellDoubleClick}
                 getRowProps={({ rowIndex }) => ({
                   draggable: true,

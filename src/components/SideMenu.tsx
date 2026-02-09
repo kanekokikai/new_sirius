@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useMemo } from "react";
 import { featureCards } from "../data/mockData";
 import { useAuth } from "../auth/AuthContext";
@@ -12,7 +12,18 @@ type NavItem = {
 
 const SideMenu = ({ onNavigate }: { onNavigate?: () => void }) => {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
+
+  const currentDept = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("dept") ?? "";
+  }, [location.search]);
+
+  const withDept = useMemo(() => {
+    if (!currentDept) return (to: string) => to;
+    return (to: string) => `${to}?dept=${encodeURIComponent(currentDept)}`;
+  }, [currentDept]);
 
   const allowed = useMemo(() => {
     const set = new Set<FeatureKey>();
@@ -44,7 +55,7 @@ const SideMenu = ({ onNavigate }: { onNavigate?: () => void }) => {
         {visibleItems.map((item) => (
           <NavLink
             key={item.to}
-            to={item.to}
+            to={withDept(item.to)}
             className={({ isActive }) => ["sidebar-link", isActive ? "active" : ""].join(" ").trim()}
             onClick={() => onNavigate?.()}
             end={item.to === "/home"}

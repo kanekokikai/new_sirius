@@ -1,22 +1,26 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth, getDepartmentPermissions } from "../auth/AuthContext";
 import CardGrid from "../components/CardGrid";
-import Header from "../components/Header";
-import { departments as allDepartments, featureCards } from "../data/mockData";
+import { featureCards } from "../data/mockData";
 import { Department, FeatureCard } from "../types";
 
 const HomePage = () => {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
+  const location = useLocation();
 
   const allowedDepartments = useMemo<Department[]>(() => {
     return user?.departments ?? [];
   }, [user]);
 
-  const [activeDepartment, setActiveDepartment] = useState<Department>(
-    allowedDepartments[0] ?? "フロント"
-  );
+  const activeDepartment = useMemo<Department>(() => {
+    const params = new URLSearchParams(location.search);
+    const fromUrl = params.get("dept");
+    if (fromUrl && allowedDepartments.includes(fromUrl as Department)) {
+      return fromUrl as Department;
+    }
+    return allowedDepartments[0] ?? "フロント";
+  }, [allowedDepartments, location.search]);
 
   const visibleCards: FeatureCard[] = useMemo(() => {
     const perms = getDepartmentPermissions(user, activeDepartment);
@@ -28,16 +32,6 @@ const HomePage = () => {
 
   return (
     <div className="app-shell">
-      <Header
-        currentDepartment={activeDepartment}
-        departments={allowedDepartments.length ? allowedDepartments : allDepartments}
-        userName={user?.userName ?? "ゲスト"}
-        onDepartmentChange={setActiveDepartment}
-        onLogout={() => {
-          logout();
-          navigate("/");
-        }}
-      />
       <div className="page">
         <h2>ホーム</h2>
         <p>

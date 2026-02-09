@@ -16,6 +16,7 @@ type Props = {
   /** optional column widths (CSS width values), same length as columns */
   colWidths?: Array<string | undefined>;
   ariaLabel?: string;
+  onCellClick?: (args: { rowIndex: number; colIndex: number; value: string }) => void;
   onCellDoubleClick?: (args: { rowIndex: number; colIndex: number; value: string }) => void;
   /** optional sortable columns (header click triggers onRequestSort) */
   sortableColumnIndices?: number[];
@@ -41,6 +42,7 @@ export const InboundPdfTable: React.FC<Props> = ({
   groupStartColumnIndices = [0, 1],
   colWidths,
   ariaLabel,
+  onCellClick,
   onCellDoubleClick,
   sortableColumnIndices,
   sortState,
@@ -177,6 +179,7 @@ export const InboundPdfTable: React.FC<Props> = ({
                     key={`td-${rIdx}-${cIdx}`}
                     data-col={cIdx}
                     rowSpan={span > 1 ? span : undefined}
+                    onClick={() => onCellClick?.({ rowIndex: rIdx, colIndex: cIdx, value: row[cIdx] })}
                     onDoubleClick={() => onCellDoubleClick?.({ rowIndex: rIdx, colIndex: cIdx, value: row[cIdx] })}
                   >
                     {renderCell ? renderCell({ rowIndex: rIdx, colIndex: cIdx, value: row[cIdx], row }) : row[cIdx]}

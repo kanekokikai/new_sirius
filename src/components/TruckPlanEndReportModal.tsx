@@ -90,7 +90,7 @@ export const TruckPlanEndReportModal = ({
           </p>
 
           <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 10 }}>
-            <div style={{ color: "#64748b", fontWeight: 800 }}>氏名</div>
+            <div style={{ color: "#64748b", fontWeight: 800 }}>ドライバー</div>
             <div style={{ color: "#0f172a", fontWeight: 900 }}>{driverName}</div>
 
             <div style={{ color: "#64748b", fontWeight: 800 }}>日付</div>

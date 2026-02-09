@@ -64,7 +64,7 @@ export const MachineNoEditModal: React.FC<Props> = ({
         </div>
         <div className="modal-body">
           <p style={{ marginTop: 0, marginBottom: 10, color: "#475569", fontSize: 12, lineHeight: 1.35 }}>
-            No.セルのダブルクリックで開くデモモーダルです。候補から選択するか、直接入力できます。
+            No.セルのクリック（またはダブルクリック）で開くデモモーダルです。候補から選択するか、直接入力できます。
           </p>
 
           <div className="filter-bar multi" style={{ marginTop: 0 }}>

@@ -7,11 +7,15 @@ import {
   dispatchInstructionLabels,
   DispatchInstructionKey
 } from "../data/dispatchInstructions";
-import { TableSection } from "../data/featureContent";
-import { inboundOrderSearchColumns, inboundOrderSearchRawRows } from "../data/inboundOrderSearchMock";
-import { loadInboundDraft, loadInboundRows } from "../data/ordersLocalDb";
+import { inboundOrderSearchColumns, inboundOrderSearchColWidths, inboundOrderSearchRawRows } from "../data/inboundOrderSearchMock";
+import { loadInboundDraft, loadInboundRows, saveInboundRows } from "../data/ordersLocalDb";
 import { getTruckPlanRowsByDate, TruckPlanAction, TruckPlanRow } from "../data/truckPlanMock";
 import { TruckPlanEndReportModal } from "../components/TruckPlanEndReportModal";
+import { ConfirmMoveModal } from "../components/ConfirmMoveModal";
+import { InboundPdfTable } from "../components/InboundPdfTable";
+import { MachineNoEditModal } from "../components/MachineNoEditModal";
+import { machineNoOptions } from "../data/inboundEditMock";
+import { SimpleValueEditModal } from "../components/SimpleValueEditModal";
 import { Department } from "../types";
 
 const isValidInstructionKey = (key: string): key is DispatchInstructionKey =>
@@ -38,6 +42,45 @@ const extractTimeFromTimeCell = (value: string) => {
   return m ? m[1].trim() : s;
 };
 
+// inboundOrderSearchMock (v3) column indices
+const INBOUND_PDF_COL = {
+  issue: 0,
+  status: 1,
+  groupNo: 2,
+  usagePeriod: 3,
+  location: 4,
+  machine: 5,
+  machineNo: 6,
+  quantity: 7,
+  vehicle: 8,
+  wrecker: 9,
+  driver: 10,
+  customer: 11,
+  site: 12,
+  time: 13,
+  note: 14,
+  hour: 15,
+  transportFee: 16
+} as const;
+
+type OrderStatus = "予約" | "確定" | "払出済" | "キャンセル" | "破棄";
+
+const statusToSymbolAndColor = (statusRaw: string): { symbol: string; color: string } => {
+  const status = (statusRaw ?? "").trim() as OrderStatus;
+  if (status === "予約") return { symbol: "▲", color: "#f59e0b" }; // yellow
+  if (status === "確定") return { symbol: "●", color: "#2563eb" }; // blue
+  if (status === "払出済") return { symbol: "■", color: "#16a34a" }; // green
+  if (status === "キャンセル") return { symbol: "×", color: "#7f1d1d" }; // blood red
+  if (status === "破棄") return { symbol: "×", color: "#0f172a" }; // black-ish
+  return { symbol: "", color: "#475569" };
+};
+
+const isPdfGroupStartRow = (row?: string[]) => {
+  if (!row) return false;
+  // NOTE: 受注検索結果（PDF再現）は「場所」列をグループ開始の基準にする
+  return (row[INBOUND_PDF_COL.location] ?? "").trim().length > 0;
+};
+
 const toIsoDateLocal = (d: Date) => {
   // Avoid timezone issues with toISOString() by shifting to local time.
   const offsetMs = d.getTimezoneOffset() * 60_000;
@@ -45,6 +88,7 @@ const toIsoDateLocal = (d: Date) => {
 };
 
 const TRUCK_PLAN_DRAFT_KEY_PREFIX = "truckPlanDraft|";
+const TRUCK_PLAN_REMOVED_KEY_PREFIX = "truckPlanRemovedRows|";
 
 const loadTruckPlanDraft = (date: string): TruckPlanRow[] | null => {
   try {
@@ -111,16 +155,92 @@ const isTruckPlanActionEmpty = (a?: Partial<TruckPlanAction> | null) => {
     String(a.size ?? "").trim() ||
     String(a.place ?? "").trim() ||
     String(a.freeText ?? "").trim() ||
-    String(a.time ?? "").trim()
+    String(a.time ?? "").trim() ||
+    // "終了報告"系の値が入っている場合も、枠としては空ではない扱いにする
+    Boolean(a.ended) ||
+    String(a.endedReportedAt ?? "").trim() ||
+    String(a.endedTime ?? "").trim()
   );
 };
 
 const normalizePersonName = (s: string) => s.replace(/[ \u3000]/g, "").trim();
 
+const parseFirstHHMMToMinutes = (text: string): number | null => {
+  const s = String(text ?? "").trim();
+  if (!s) return null;
+  const m = s.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23) return null;
+  if (mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+};
+
+const parseLastHHMMToMinutes = (text: string): number | null => {
+  const s = String(text ?? "").trim();
+  if (!s) return null;
+  const ms = [...s.matchAll(/(\d{1,2}):(\d{2})/g)];
+  if (ms.length === 0) return null;
+  const m = ms[ms.length - 1];
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23) return null;
+  if (mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+};
+
+const shouldAskWaitingFee = (action: TruckPlanAction | undefined, endTime: string | undefined) => {
+  if (!action) return false;
+  if (String(action.kind ?? "").trim() !== "搬入") return false;
+  // 搬入時間がレンジ（例: 9:00～12:00）の場合は「末尾（12:00）」を基準にする
+  // 単発時刻の場合はその時刻が末尾になる
+  const planned = parseLastHHMMToMinutes(action.time ?? "");
+  const ended = parseFirstHHMMToMinutes(endTime ?? "");
+  if (planned == null || ended == null) return false;
+  if (ended < planned) return false;
+  return ended - planned >= 60;
+};
+
+const appendWaitingFeeMemo = (memo: string | undefined) => {
+  const base = String(memo ?? "").trim();
+  if (base.includes("待機料")) return base;
+  return base ? `${base} / 待機料あり` : "待機料あり";
+};
+
+const loadTruckPlanRemovedRowKeys = (date: string): Set<string> => {
+  try {
+    const raw = sessionStorage.getItem(`${TRUCK_PLAN_REMOVED_KEY_PREFIX}${date}`);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    const keys = parsed
+      .map((x) => normalizePersonName(String(x ?? "")))
+      .filter((x) => Boolean(x));
+    return new Set(keys);
+  } catch {
+    return new Set();
+  }
+};
+
+const saveTruckPlanRemovedRowKeys = (date: string, keys: Set<string>) => {
+  try {
+    sessionStorage.setItem(`${TRUCK_PLAN_REMOVED_KEY_PREFIX}${date}`, JSON.stringify(Array.from(keys)));
+  } catch {
+    // ignore
+  }
+};
+
 const actionSig = (a: Pick<TruckPlanAction, "kind" | "size" | "place" | "time">) =>
   `${String(a.kind ?? "").trim()}|${String(a.size ?? "").trim()}|${String(a.place ?? "").trim()}|${String(a.time ?? "").trim()}`;
 
-const mergeInboundIntoTruckPlanRows = (date: string, base: TruckPlanRow[]): TruckPlanRow[] => {
+const mergeInboundIntoTruckPlanRows = (
+  date: string,
+  base: TruckPlanRow[],
+  removedRowKeys: Set<string>
+): TruckPlanRow[] => {
   // 受注検索結果（搬入）のデモ表と連携する
   // - 運転手セルに書いた名前が、トラック予定指示書の氏名と一致したら反映
   // - 日付は「受注側の搬入日（draft）」が設定されている場合のみ一致チェック（未設定なら常に反映）
@@ -205,6 +325,7 @@ const mergeInboundIntoTruckPlanRows = (date: string, base: TruckPlanRow[]): Truc
   // 2) Add missing inbound blocks into first empty slot (no duplicates)
   for (const { driverName, action } of assignments) {
     const driverKey = normalizePersonName(driverName);
+    if (removedRowKeys.has(driverKey)) continue;
     let row = next.find((r) => normalizePersonName(r.name) === driverKey);
     if (!row) {
       row = { category: "（搬入）", name: driverName, actions: [] };
@@ -231,12 +352,16 @@ const TruckPlanTable = ({
   rows,
   slotCount,
   date,
-  onEditSlot
+  onEditSlot,
+  canDeleteRow,
+  onDeleteRow
 }: {
   rows: TruckPlanRow[];
   slotCount: number;
   date: string;
   onEditSlot: (name: string, slotIndex: number, patch: Partial<TruckPlanAction>) => void;
+  canDeleteRow?: (row: TruckPlanRow) => boolean;
+  onDeleteRow?: (row: TruckPlanRow) => void;
 }) => {
   const [dragging, setDragging] = useState<{ name: string; fromIndex: number } | null>(null);
   const [dragOver, setDragOver] = useState<{ name: string; toIndex: number } | null>(null);
@@ -253,6 +378,11 @@ const TruckPlanTable = ({
     slotIndex: number;
     mode: "end" | "unend";
     summary: { topLeft: string; bottomLeft: string; bottomRight: string; memo: string };
+  } | null>(null);
+  const [waitingFeeTarget, setWaitingFeeTarget] = useState<{
+    name: string;
+    slotIndex: number;
+    endTime?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -274,7 +404,7 @@ const TruckPlanTable = ({
   }, [contextMenu]);
 
   const columns = useMemo(() => {
-    const cols: string[] = ["区分", "氏名"];
+    const cols: string[] = ["トラック", "ドライバー"];
     for (let i = 0; i < slotCount; i++) cols.push(String(i + 1));
     return cols;
   }, [slotCount]);
@@ -293,7 +423,36 @@ const TruckPlanTable = ({
           {rows.map((r) => (
             <tr key={`${r.category}-${r.name}`}>
               <td className="truck-plan-category">{r.category}</td>
-              <td className="truck-plan-name">{r.name}</td>
+              <td className="truck-plan-name">
+                <div className="truck-plan-name-cell">
+                  <span className="truck-plan-name-text" title={r.name}>
+                    {r.name}
+                  </span>
+                  {canDeleteRow?.(r) && (
+                    (() => {
+                      const hasPlan = (r.actions ?? []).some((a) => !isTruckPlanActionEmpty(a));
+                      const disabled = hasPlan;
+                      const title = disabled ? "予定が入っているため削除できません" : "追加したドライバー行を削除";
+                      return (
+                    <button
+                      className="truck-plan-row-delete"
+                      type="button"
+                      disabled={disabled}
+                      aria-disabled={disabled}
+                      onClick={() => {
+                        if (disabled) return;
+                        onDeleteRow?.(r);
+                      }}
+                      aria-label={`ドライバー行を削除: ${r.name}`}
+                      title={title}
+                    >
+                      削除
+                    </button>
+                      );
+                    })()
+                  )}
+                </div>
+              </td>
               {Array.from({ length: slotCount }).map((_, i) => {
                 const a = r.actions[i];
                 const topLeft = composeTruckPlanTopLeft(a?.kind ?? "", a?.size);
@@ -514,14 +673,55 @@ const TruckPlanTable = ({
               endedReportedAt: undefined,
               endedTime: undefined
             });
+            setEndReportTarget(null);
+            return;
           } else {
+            const row = rows.find((r) => r.name === endReportTarget.name);
+            const action = row?.actions?.[endReportTarget.slotIndex];
+            if (shouldAskWaitingFee(action, endTime)) {
+              // POPUP（モーダル）で確認してから確定する
+              setWaitingFeeTarget({ name: endReportTarget.name, slotIndex: endReportTarget.slotIndex, endTime });
+              setEndReportTarget(null);
+              return;
+            }
             onEditSlot(endReportTarget.name, endReportTarget.slotIndex, {
               ended: true,
               endedReportedAt: new Date().toISOString(),
               endedTime: endTime
             });
+            setEndReportTarget(null);
+            return;
           }
-          setEndReportTarget(null);
+        }}
+      />
+
+      <ConfirmMoveModal
+        open={Boolean(waitingFeeTarget)}
+        title="待機料確認"
+        message={"終了報告の時間が搬入時間より1時間以上遅れています。\n待機料を取りますか？"}
+        okLabel="取る"
+        cancelLabel="取らない"
+        onOk={() => {
+          if (!waitingFeeTarget) return;
+          const row = rows.find((r) => r.name === waitingFeeTarget.name);
+          const action = row?.actions?.[waitingFeeTarget.slotIndex];
+          const nextFreeText = appendWaitingFeeMemo(action?.freeText);
+          onEditSlot(waitingFeeTarget.name, waitingFeeTarget.slotIndex, {
+            ended: true,
+            endedReportedAt: new Date().toISOString(),
+            endedTime: waitingFeeTarget.endTime,
+            freeText: nextFreeText
+          });
+          setWaitingFeeTarget(null);
+        }}
+        onCancel={() => {
+          if (!waitingFeeTarget) return;
+          onEditSlot(waitingFeeTarget.name, waitingFeeTarget.slotIndex, {
+            ended: true,
+            endedReportedAt: new Date().toISOString(),
+            endedTime: waitingFeeTarget.endTime
+          });
+          setWaitingFeeTarget(null);
         }}
       />
     </div>
@@ -548,14 +748,26 @@ const DispatchInstructionPage = () => {
   const [truckAddName, setTruckAddName] = useState("");
   const [truckAddError, setTruckAddError] = useState("");
   const [editingRow, setEditingRow] = useState<(string | number)[] | null>(null);
-  const [inboundDraftSections, setInboundDraftSections] = useState<TableSection[]>(
-    () => dispatchInstructionContent.inbound
-  );
   const [numberEdit, setNumberEdit] = useState<{
     sectionTitle: string;
     rowRef: (string | number)[];
     value: string;
   } | null>(null);
+  const [inboundRows, setInboundRows] = useState<string[][]>(() => loadInboundRows(inboundOrderSearchRawRows));
+  const [inboundAppliedFilter, setInboundAppliedFilter] = useState(() => ({
+    dateFrom: "",
+    dateTo: "",
+    customer: ""
+  }));
+  const [machineNoModalOpen, setMachineNoModalOpen] = useState(false);
+  const [machineNoTargetSourceRowIndex, setMachineNoTargetSourceRowIndex] = useState<number | null>(null);
+  const [machineNoInitial, setMachineNoInitial] = useState("");
+  const [hourModalOpen, setHourModalOpen] = useState(false);
+  const [hourTargetSourceRowIndex, setHourTargetSourceRowIndex] = useState<number | null>(null);
+  const [hourInitial, setHourInitial] = useState("");
+  const machineNoClickTimerRef = useRef<number | null>(null);
+  const machineNoLongPressFiredRef = useRef(false);
+  const machineNoLongPressMs = 520;
 
   const params = new URLSearchParams(location.search);
   const departmentFromUrl = params.get("dept") as Department | null;
@@ -595,7 +807,8 @@ const DispatchInstructionPage = () => {
   }
 
   const resolvedKey = instructionKey;
-  const sections = resolvedKey === "inbound" ? inboundDraftSections : dispatchInstructionContent[resolvedKey];
+  const sections = dispatchInstructionContent[resolvedKey];
+  const filteredSections = sections;
   const label = dispatchInstructionLabels[resolvedKey];
   const description = dispatchInstructionDescriptions[resolvedKey];
   const dispatchMenuLink = `/feature/dispatch?dept=${encodeURIComponent(activeDepartment)}`;
@@ -612,8 +825,14 @@ const DispatchInstructionPage = () => {
 
   useEffect(() => {
     if (resolvedKey !== "inbound") return;
-    setInboundDraftSections(dispatchInstructionContent.inbound);
-    setNumberEdit(null);
+    const refresh = () => setInboundRows(loadInboundRows(inboundOrderSearchRawRows));
+    refresh();
+    window.addEventListener("demo:inboundRowsUpdated", refresh as EventListener);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("demo:inboundRowsUpdated", refresh as EventListener);
+      window.removeEventListener("focus", refresh);
+    };
   }, [resolvedKey]);
 
   useEffect(() => {
@@ -622,37 +841,358 @@ const DispatchInstructionPage = () => {
         window.clearTimeout(numberClickTimerRef.current);
         numberClickTimerRef.current = null;
       }
+      if (machineNoClickTimerRef.current != null) {
+        window.clearTimeout(machineNoClickTimerRef.current);
+        machineNoClickTimerRef.current = null;
+      }
     };
   }, []);
 
-  const filteredSections = useMemo(() => {
-    if (resolvedKey !== "inbound") return sections;
+  const inboundPdfFiltered = useMemo((): { rows: string[][]; rowRefs: number[] } => {
+    if (resolvedKey !== "inbound") return { rows: [], rowRefs: [] };
 
-    const from = parseLooseDate(dateFrom);
-    const to = parseLooseDate(dateTo);
-    const normalizedCustomer = customer.trim().toLowerCase();
+    const from = parseLooseDate(inboundAppliedFilter.dateFrom);
+    const to = parseLooseDate(inboundAppliedFilter.dateTo);
+    const normalizedCustomer = inboundAppliedFilter.customer.trim().toLowerCase();
+    const base = inboundRows;
 
-    return sections.map((section) => {
-      const filteredRows = section.rows.filter((row) => {
-        const timeColIndex = section.columns.findIndex((col) => col.includes("時間"));
-        const customerColIndex = section.columns.findIndex(
-          (col) => col.includes("会社名") || col.includes("得意先")
-        );
+    // Filter by group (so we don't cut a group in half).
+    const next: string[][] = [];
+    const rowRefs: number[] = [];
+    let groupNo = 0;
+    let i = 0;
+    while (i < base.length) {
+      // seek group start
+      while (i < base.length && !isPdfGroupStartRow(base[i])) i += 1;
+      if (i >= base.length) break;
+      const start = i;
+      i += 1;
+      while (i < base.length && !isPdfGroupStartRow(base[i])) i += 1;
+      const end = i; // exclusive
 
-        const timeCell = String(row[timeColIndex] ?? "");
-        const dateStr = extractDateFromTimeCell(timeCell);
-        const cust = String(row[customerColIndex] ?? "").toLowerCase();
-        const dateObj = dateStr ? parseLooseDate(dateStr) : null;
+      const customerCell =
+        base
+          .slice(start, end)
+          .map((r) => String(r?.[INBOUND_PDF_COL.customer] ?? "").trim())
+          .find((x) => x.length > 0) ?? "";
+      const timeCell =
+        base
+          .slice(start, end)
+          .map((r) => String(r?.[INBOUND_PDF_COL.time] ?? "").trim())
+          .find((x) => x.length > 0) ?? "";
 
-        if (from && (!dateObj || dateObj < from)) return false;
-        if (to && (!dateObj || dateObj > to)) return false;
-        if (normalizedCustomer && !cust.includes(normalizedCustomer)) return false;
-        return true;
-      });
+      const dateStr = extractDateFromTimeCell(timeCell);
+      const dateObj = dateStr ? parseLooseDate(dateStr) : null;
 
-      return { ...section, rows: filteredRows };
-    });
-  }, [customer, dateFrom, dateTo, resolvedKey, sections]);
+      if (from && dateObj && dateObj < from) continue;
+      if (to && dateObj && dateObj > to) continue;
+      if (normalizedCustomer && !customerCell.toLowerCase().includes(normalizedCustomer)) continue;
+
+      groupNo += 1;
+      for (let r = start; r < end; r += 1) {
+        const row = [...(base[r] ?? [])];
+        const isStart = isPdfGroupStartRow(row);
+        if (isStart) {
+          row[INBOUND_PDF_COL.issue] = "払出";
+          row[INBOUND_PDF_COL.groupNo] = String(groupNo);
+          if (!String(row[INBOUND_PDF_COL.status] ?? "").trim()) row[INBOUND_PDF_COL.status] = "予約";
+        } else {
+          row[INBOUND_PDF_COL.issue] = "";
+          row[INBOUND_PDF_COL.status] = "";
+          row[INBOUND_PDF_COL.groupNo] = "";
+        }
+        next.push(row);
+        rowRefs.push(r);
+      }
+    }
+    return { rows: next, rowRefs };
+  }, [inboundAppliedFilter.customer, inboundAppliedFilter.dateFrom, inboundAppliedFilter.dateTo, inboundRows, resolvedKey]);
+
+  const inboundPdfTable = useMemo(() => {
+    if (resolvedKey !== "inbound") return null;
+    const shownRows = inboundPdfFiltered.rows;
+    const shownRowRefs = inboundPdfFiltered.rowRefs;
+
+    const findGroupStart = (rowIndex: number) => {
+      let i = rowIndex;
+      while (i > 0 && !isPdfGroupStartRow(shownRows[i])) i -= 1;
+      return i;
+    };
+
+    const findGroupEnd = (groupStart: number) => {
+      let i = groupStart + 1;
+      while (i < shownRows.length && !isPdfGroupStartRow(shownRows[i])) i += 1;
+      return i;
+    };
+
+    const getMergedValueInGroup = (groupStart: number, colIndex: number) => {
+      const end = findGroupEnd(groupStart);
+      for (let i = groupStart; i < end; i += 1) {
+        const v = String(shownRows[i]?.[colIndex] ?? "").trim();
+        if (v) return v;
+      }
+      return "";
+    };
+
+    const buildOutboundNavState = (rowIndex: number) => {
+      const src = shownRowRefs[rowIndex];
+      if (typeof src !== "number") return null;
+      const row = inboundRows[src] ?? [];
+      const machineNo = String(row[INBOUND_PDF_COL.machineNo] ?? "").trim();
+      if (!machineNo) return null;
+      const machineName = String(row[INBOUND_PDF_COL.machine] ?? "").trim();
+      if (!machineName) return null;
+      if (machineName.startsWith("※")) return null;
+
+      const qty = String(row[INBOUND_PDF_COL.quantity] ?? "").trim();
+      const machine = qty ? `${machineName}（${qty}台）` : machineName;
+
+      const groupStart = findGroupStart(rowIndex);
+      const timeCell = getMergedValueInGroup(groupStart, INBOUND_PDF_COL.time);
+      const dateFromTimeCell = extractDateFromTimeCell(timeCell);
+      const inboundDraft = loadInboundDraft();
+      const plannedDate = dateFromTimeCell || (inboundDraft?.inboundDate ?? "");
+      const plannedTime = dateFromTimeCell ? extractTimeFromTimeCell(timeCell) : timeCell;
+
+      return {
+        department: activeDepartment,
+        instructionKey: resolvedKey,
+        instructionId: machineNo,
+        plannedDate,
+        plannedTime,
+        machine,
+        vehicle: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.vehicle),
+        wrecker: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.wrecker),
+        driver: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.driver),
+        customer: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.customer),
+        site: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.site),
+        note: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.note),
+        hourMeter: String(row[INBOUND_PDF_COL.hour] ?? "")
+      };
+    };
+
+    const canIssueSlipForGroup = (groupStart: number) => {
+      const end = findGroupEnd(groupStart);
+      const driverCell = getMergedValueInGroup(groupStart, INBOUND_PDF_COL.driver);
+      const hasDriver = String(driverCell ?? "").trim().length > 0;
+      if (!hasDriver) return false;
+
+      for (let i = groupStart; i < end; i += 1) {
+        const r = shownRows[i] ?? [];
+        const machine = String(r[INBOUND_PDF_COL.machine] ?? "").trim();
+        if (!machine) continue;
+        if (machine.startsWith("※")) continue; // 指示備考行
+        const no = String(r[INBOUND_PDF_COL.machineNo] ?? "").trim();
+        if (!no) return false;
+      }
+      return true;
+    };
+
+    return (
+      <div className="orders-results-fullbleed">
+        <p style={{ marginTop: 0, color: "#475569", fontSize: 12 }}>
+          受注管理の「受注検索結果（搬入 / PDF再現）」と同じ見た目で表示します（デモ）
+        </p>
+        <InboundPdfTable
+          ariaLabel="受注検索結果（搬入 / PDF再現）"
+          tableClassName="inbound-pdf-table--inbound-instruction"
+          columns={inboundOrderSearchColumns}
+          rows={shownRows}
+          colWidths={inboundOrderSearchColWidths}
+          // 払出/件数/場所 + 右側の情報列はグループ内で縦結合
+          mergeColumnIndices={[
+            INBOUND_PDF_COL.issue,
+            INBOUND_PDF_COL.status,
+            INBOUND_PDF_COL.groupNo,
+            INBOUND_PDF_COL.usagePeriod,
+            INBOUND_PDF_COL.location,
+            INBOUND_PDF_COL.vehicle,
+            INBOUND_PDF_COL.wrecker,
+            INBOUND_PDF_COL.driver,
+            INBOUND_PDF_COL.customer,
+            INBOUND_PDF_COL.site,
+            INBOUND_PDF_COL.time,
+            INBOUND_PDF_COL.note,
+            INBOUND_PDF_COL.transportFee
+          ]}
+          mergeBlankCellsWithinGroup
+          groupStartColumnIndices={[INBOUND_PDF_COL.location]}
+          renderCell={({ rowIndex, colIndex, value, row }) => {
+            if (colIndex === INBOUND_PDF_COL.machineNo) {
+              const display = String(value ?? "");
+              const isEmpty = display.trim().length === 0;
+              const displayLabel = isEmpty ? "（未入力）" : display;
+              const isFactory = activeDepartment === "工場";
+              const canLongPress = isFactory && display.trim().length > 0;
+              return (
+                <button
+                  type="button"
+                  onPointerDown={(e) => {
+                    machineNoLongPressFiredRef.current = false;
+                    if (machineNoClickTimerRef.current != null) {
+                      window.clearTimeout(machineNoClickTimerRef.current);
+                      machineNoClickTimerRef.current = null;
+                    }
+                    if (!canLongPress) return;
+
+                    try {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    } catch {
+                      // ignore
+                    }
+
+                    machineNoClickTimerRef.current = window.setTimeout(() => {
+                      const navState = buildOutboundNavState(rowIndex);
+                      if (!navState) return;
+                      machineNoLongPressFiredRef.current = true;
+                      navigate("/factory/outbound-register", { state: navState });
+                      machineNoClickTimerRef.current = null;
+                    }, machineNoLongPressMs);
+                  }}
+                  onPointerUp={() => {
+                    if (machineNoClickTimerRef.current != null) {
+                      window.clearTimeout(machineNoClickTimerRef.current);
+                      machineNoClickTimerRef.current = null;
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    if (machineNoClickTimerRef.current != null) {
+                      window.clearTimeout(machineNoClickTimerRef.current);
+                      machineNoClickTimerRef.current = null;
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    if (machineNoClickTimerRef.current != null) {
+                      window.clearTimeout(machineNoClickTimerRef.current);
+                      machineNoClickTimerRef.current = null;
+                    }
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // long-press already navigated -> skip click behavior
+                    if (machineNoLongPressFiredRef.current) {
+                      machineNoLongPressFiredRef.current = false;
+                      return;
+                    }
+                    const src = shownRowRefs[rowIndex];
+                    if (typeof src !== "number") return;
+                    const machineCell = String(shownRows[rowIndex]?.[INBOUND_PDF_COL.machine] ?? "").trim();
+                    if (!machineCell) return;
+                    if (machineCell.startsWith("※")) return;
+                    setMachineNoTargetSourceRowIndex(src);
+                    setMachineNoInitial(display);
+                    setMachineNoModalOpen(true);
+                  }}
+                  style={{
+                    width: "100%",
+                    minHeight: 18,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "2px 4px",
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    color: isEmpty ? "#94a3b8" : "#2563eb",
+                    fontWeight: 700,
+                    textDecoration: isEmpty ? "none" : "underline",
+                    touchAction: "manipulation"
+                  }}
+                  title={canLongPress ? "クリック: 番号入力 / 長押し: 出入りくん" : "クリック: 番号入力"}
+                  aria-label={`No.を編集: ${display}`}
+                >
+                  {displayLabel}
+                </button>
+              );
+            }
+            if (colIndex === INBOUND_PDF_COL.hour) {
+              const display = String(value ?? "");
+              const isEmpty = display.trim().length === 0;
+              const displayLabel = isEmpty ? "（未入力）" : display;
+              const machineCell = String(shownRows[rowIndex]?.[INBOUND_PDF_COL.machine] ?? "").trim();
+              const isEditableRow = Boolean(machineCell) && !machineCell.startsWith("※");
+              return (
+                <button
+                  type="button"
+                  disabled={!isEditableRow}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!isEditableRow) return;
+                    const src = shownRowRefs[rowIndex];
+                    if (typeof src !== "number") return;
+                    setHourTargetSourceRowIndex(src);
+                    setHourInitial(display);
+                    setHourModalOpen(true);
+                  }}
+                  style={{
+                    width: "100%",
+                    minHeight: 18,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "2px 4px",
+                    border: "none",
+                    background: "transparent",
+                    cursor: isEditableRow ? "pointer" : "default",
+                    color: isEmpty ? "#94a3b8" : "#0f172a",
+                    fontWeight: 700,
+                    textDecoration: isEmpty ? "none" : "underline",
+                    touchAction: "manipulation"
+                  }}
+                  title={isEditableRow ? "クリック: アワーメータ入力" : undefined}
+                  aria-label={`アワーメータを編集: ${display}`}
+                >
+                  {displayLabel}
+                </button>
+              );
+            }
+            if (colIndex === INBOUND_PDF_COL.status) {
+              const { symbol, color } = statusToSymbolAndColor(String(value ?? ""));
+              return (
+                <span
+                  title={String(value ?? "").trim()}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: "100%",
+                    color,
+                    fontWeight: 900
+                  }}
+                >
+                  {symbol}
+                </span>
+              );
+            }
+            if (colIndex !== INBOUND_PDF_COL.issue) return row[colIndex];
+            if (!String(value ?? "").trim()) return "";
+
+            const groupStart = findGroupStart(rowIndex);
+            const canIssueSlip = canIssueSlipForGroup(groupStart);
+            const disabledReason = !canIssueSlip ? "運転手未設定 または No.未入力の商品があります" : "";
+            return (
+              <button
+                className="button"
+                type="button"
+                disabled={!canIssueSlip}
+                title={!canIssueSlip ? disabledReason : "伝票発行（デモ）"}
+                style={{ padding: "6px 10px", fontWeight: 800 }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  // 見た目合わせが目的のため、ここでは処理しない（受注管理側のデモ操作を使用）
+                }}
+              >
+                払出
+              </button>
+            );
+          }}
+        />
+      </div>
+    );
+  }, [inboundPdfFiltered, resolvedKey]);
 
   const truckPlanSlots = 6;
 
@@ -660,18 +1200,28 @@ const DispatchInstructionPage = () => {
     if (resolvedKey !== "truckPlan") return;
     const saved = loadTruckPlanDraft(truckPlanDate);
     const base = seedTruckPlanRoster(truckPlanDate, saved);
-    const merged = mergeInboundIntoTruckPlanRows(truckPlanDate, base);
-    setTruckPlanDraftRows(merged);
+    const removed = loadTruckPlanRemovedRowKeys(truckPlanDate);
+    const merged = mergeInboundIntoTruckPlanRows(truckPlanDate, base, removed);
+    const baseKeySet = new Set(getTruckPlanRowsByDate(truckPlanDate).map((r) => normalizePersonName(r.name)));
+    const cleaned = merged.filter(
+      (r) => baseKeySet.has(normalizePersonName(r.name)) || !removed.has(normalizePersonName(r.name))
+    );
+    setTruckPlanDraftRows(cleaned);
     // Persist merged result so subsequent edits build on it.
-    saveTruckPlanDraft(truckPlanDate, merged);
+    saveTruckPlanDraft(truckPlanDate, cleaned);
   }, [resolvedKey, truckPlanDate]);
 
   const refreshTruckPlanFromInbound = () => {
     setTruckPlanDraftRows((prev) => {
       const base = seedTruckPlanRoster(truckPlanDate, loadTruckPlanDraft(truckPlanDate) ?? prev);
-      const merged = mergeInboundIntoTruckPlanRows(truckPlanDate, base);
-      saveTruckPlanDraft(truckPlanDate, merged);
-      return merged;
+      const removed = loadTruckPlanRemovedRowKeys(truckPlanDate);
+      const merged = mergeInboundIntoTruckPlanRows(truckPlanDate, base, removed);
+      const baseKeySet = new Set(getTruckPlanRowsByDate(truckPlanDate).map((r) => normalizePersonName(r.name)));
+      const cleaned = merged.filter(
+        (r) => baseKeySet.has(normalizePersonName(r.name)) || !removed.has(normalizePersonName(r.name))
+      );
+      saveTruckPlanDraft(truckPlanDate, cleaned);
+      return cleaned;
     });
   };
 
@@ -762,8 +1312,36 @@ const DispatchInstructionPage = () => {
     });
   };
 
+  const baseRosterKeySet = useMemo(() => {
+    if (resolvedKey !== "truckPlan") return new Set<string>();
+    return new Set(getTruckPlanRowsByDate(truckPlanDate).map((r) => normalizePersonName(r.name)));
+  }, [resolvedKey, truckPlanDate]);
+
+  const handleDeleteTruckPlanRow = (row: TruckPlanRow) => {
+    const key = normalizePersonName(row.name);
+    if (!key) return;
+    if (baseRosterKeySet.has(key)) return;
+
+    const hasAnyPlanned = (row.actions ?? []).some((a) => !isTruckPlanActionEmpty(a));
+    const ok = window.confirm(
+      `「${row.name}」を予定表から削除しますか？` +
+        (hasAnyPlanned ? "\n（入力済みの予定も削除されます）" : "")
+    );
+    if (!ok) return;
+
+    const removed = loadTruckPlanRemovedRowKeys(truckPlanDate);
+    removed.add(key);
+    saveTruckPlanRemovedRowKeys(truckPlanDate, removed);
+
+    setTruckPlanDraftRows((prev) => {
+      const next = prev.filter((r) => normalizePersonName(r.name) !== key);
+      saveTruckPlanDraft(truckPlanDate, next);
+      return next;
+    });
+  };
+
   return (
-    <div className={resolvedKey === "truckPlan" ? "app-shell app-shell--wide" : "app-shell"}>
+    <div className={resolvedKey === "truckPlan" || resolvedKey === "inbound" ? "app-shell app-shell--wide" : "app-shell"}>
       <div className="page">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <h2 style={{ margin: 0 }}>
@@ -825,8 +1403,8 @@ const DispatchInstructionPage = () => {
                 onChange={(e) => setTruckPlanSort(e.target.value as "default" | "nameAsc" | "nameDesc")}
               >
                 <option value="default">既定</option>
-                <option value="nameAsc">氏名（昇順）</option>
-                <option value="nameDesc">氏名（降順）</option>
+                <option value="nameAsc">ドライバー（昇順）</option>
+                <option value="nameDesc">ドライバー（降順）</option>
               </select>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
@@ -887,7 +1465,11 @@ const DispatchInstructionPage = () => {
               />
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="button primary" type="button">
+              <button
+                className="button primary"
+                type="button"
+                onClick={() => setInboundAppliedFilter({ dateFrom, dateTo, customer })}
+              >
                 検索
               </button>
               <button
@@ -897,6 +1479,7 @@ const DispatchInstructionPage = () => {
                   setDateFrom("");
                   setDateTo("");
                   setCustomer("");
+                  setInboundAppliedFilter({ dateFrom: "", dateTo: "", customer: "" });
                 }}
               >
                 クリア
@@ -922,12 +1505,17 @@ const DispatchInstructionPage = () => {
               slotCount={truckPlanSlots}
               date={truckPlanDate}
               onEditSlot={updateTruckPlanSlot}
+              canDeleteRow={(r) => !baseRosterKeySet.has(normalizePersonName(r.name))}
+              onDeleteRow={handleDeleteTruckPlanRow}
             />
           </div>
+        ) : resolvedKey === "inbound" ? (
+          inboundPdfTable
         ) : (
           filteredSections.map((section) => {
-          const showActions = resolvedKey === "inbound";
-          const allowOutboundJump = resolvedKey === "inbound" && activeDepartment === "工場";
+          // NOTE: This branch is only for pickup/transfer (inbound is rendered by InboundPdfTable above).
+          const showActions = false;
+          const allowOutboundJump = false;
           const machineColIndex = section.columns.findIndex((col) => col.includes("機械名"));
           const numberColIndex = section.columns.findIndex((col) => col.includes("番号"));
           const quantityColIndex = section.columns.findIndex((col) => col.includes("数量"));
@@ -1174,21 +1762,6 @@ const DispatchInstructionPage = () => {
                   type="button"
                   onClick={() => {
                     if (!numberEdit) return;
-                    setInboundDraftSections((prev) => {
-                      const next = prev.map((s) => ({
-                        ...s,
-                        rows: s.rows.map((r) => [...r])
-                      }));
-                      const sectionIndex = next.findIndex((s) => s.title === numberEdit.sectionTitle);
-                      if (sectionIndex < 0) return prev;
-                      const columns = next[sectionIndex].columns;
-                      const numberIndex = columns.findIndex((col) => col.includes("番号"));
-                      if (numberIndex < 0) return prev;
-                      const rowIndex = next[sectionIndex].rows.findIndex((r) => r === numberEdit.rowRef);
-                      if (rowIndex < 0) return prev;
-                      next[sectionIndex].rows[rowIndex][numberIndex] = numberEdit.value;
-                      return next;
-                    });
                     setNumberEdit(null);
                   }}
                 >
@@ -1209,11 +1782,11 @@ const DispatchInstructionPage = () => {
               </div>
               <div className="modal-body">
                 <p style={{ marginTop: 0, color: "#475569" }}>
-                  区分と氏名を入力して、予定表に行を追加します（デモのため保存先は sessionStorage です）。
+                  トラックとドライバーを入力して、予定表に行を追加します（デモのため保存先は sessionStorage です）。
                 </p>
                 <div className="filter-bar multi" style={{ marginTop: 12 }}>
                   <div className="filter-group">
-                    <label>区分</label>
+                    <label>トラック</label>
                     <input
                       className="filter-input"
                       value={truckAddCategory}
@@ -1222,7 +1795,7 @@ const DispatchInstructionPage = () => {
                     />
                   </div>
                   <div className="filter-group">
-                    <label>氏名</label>
+                    <label>ドライバー</label>
                     <input
                       className="filter-input"
                       value={truckAddName}
@@ -1246,14 +1819,18 @@ const DispatchInstructionPage = () => {
                     const category = truckAddCategory.trim();
                     const name = truckAddName.trim();
                     if (!category || !name) {
-                      setTruckAddError("区分と氏名を入力してください。");
+                      setTruckAddError("トラックとドライバーを入力してください。");
                       return;
                     }
                     const exists = truckPlanDraftRows.some((r) => r.name === name);
                     if (exists) {
-                      setTruckAddError("同じ氏名の行がすでに存在します（氏名は一意にしてください）。");
+                      setTruckAddError("同じドライバーの行がすでに存在します（ドライバーは一意にしてください）。");
                       return;
                     }
+                    // If this driver was previously deleted, un-hide it.
+                    const removed = loadTruckPlanRemovedRowKeys(truckPlanDate);
+                    const key = normalizePersonName(name);
+                    if (removed.delete(key)) saveTruckPlanRemovedRowKeys(truckPlanDate, removed);
                     const nextRows: TruckPlanRow[] = [
                       ...truckPlanDraftRows,
                       { category, name, actions: [] }
@@ -1268,6 +1845,67 @@ const DispatchInstructionPage = () => {
               </div>
             </div>
           </div>
+        )}
+        {resolvedKey === "inbound" && (
+          <MachineNoEditModal
+            open={machineNoModalOpen}
+            machineNoOptions={machineNoOptions}
+            initialValue={machineNoInitial}
+            onClose={() => {
+              setMachineNoModalOpen(false);
+              setMachineNoTargetSourceRowIndex(null);
+              setMachineNoInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              const src = machineNoTargetSourceRowIndex;
+              if (src == null) return;
+              setInboundRows((prev) => {
+                const next = prev.map((r) => [...r]);
+                const row = next[src];
+                if (!row) return prev;
+                row[INBOUND_PDF_COL.machineNo] = nextValue;
+                // persist to the same demo store as Orders screen
+                saveInboundRows(next);
+                // notify other pages to refresh
+                window.dispatchEvent(new CustomEvent("demo:inboundRowsUpdated"));
+                return next;
+              });
+              setMachineNoModalOpen(false);
+              setMachineNoTargetSourceRowIndex(null);
+              setMachineNoInitial("");
+            }}
+          />
+        )}
+        {resolvedKey === "inbound" && (
+          <SimpleValueEditModal
+            open={hourModalOpen}
+            title="アワーメータ 入力（デモ）"
+            description="アワー列をクリックして入力するデモモーダルです。"
+            mode="text"
+            initialValue={hourInitial}
+            placeholder="例) 1234 / 1234.5"
+            onClose={() => {
+              setHourModalOpen(false);
+              setHourTargetSourceRowIndex(null);
+              setHourInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              const src = hourTargetSourceRowIndex;
+              if (src == null) return;
+              setInboundRows((prev) => {
+                const next = prev.map((r) => [...r]);
+                const row = next[src];
+                if (!row) return prev;
+                row[INBOUND_PDF_COL.hour] = nextValue;
+                saveInboundRows(next);
+                window.dispatchEvent(new CustomEvent("demo:inboundRowsUpdated"));
+                return next;
+              });
+              setHourModalOpen(false);
+              setHourTargetSourceRowIndex(null);
+              setHourInitial("");
+            }}
+          />
         )}
       </div>
     </div>

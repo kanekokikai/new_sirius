@@ -50,6 +50,12 @@ a {
   min-width: 0;
 }
 
+.layout-header-shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 24px 0;
+}
+
 .sidebar {
   height: calc(100vh - 32px);
   display: flex;
@@ -199,8 +205,8 @@ a {
     padding: 0;
   }
 
-  /* keep page content away from the toggle button */
-  .app-shell {
+  /* keep the global header away from the toggle button */
+  .layout-header-shell {
     padding-top: 56px;
   }
 }
@@ -546,6 +552,53 @@ table {
   text-overflow: ellipsis;
 }
 
+.truck-plan-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.truck-plan-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.truck-plan-row-delete {
+  appearance: none;
+  border: 1px solid #fecaca; /* red-200 */
+  background: #fff1f2; /* rose-50 */
+  color: #b91c1c; /* red-700 */
+  border-radius: 8px;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.truck-plan-row-delete:hover {
+  background: #ffe4e6; /* rose-100 */
+  border-color: #fca5a5; /* red-300 */
+}
+
+.truck-plan-row-delete:disabled,
+.truck-plan-row-delete[aria-disabled="true"] {
+  border-color: #e2e8f0; /* slate-200 */
+  background: #f1f5f9; /* slate-100 */
+  color: #94a3b8; /* slate-400 */
+  cursor: not-allowed;
+}
+
+.truck-plan-row-delete:disabled:hover,
+.truck-plan-row-delete[aria-disabled="true"]:hover {
+  border-color: #e2e8f0;
+  background: #f1f5f9;
+}
+
 .truck-plan-block-cell {
   padding: 0;
   min-width: 0;
@@ -834,10 +887,10 @@ table {
 .inbound-pdf-table.inbound-pdf-table--pickup td {
   background: #fffbeb; /* amber-50 */
 }
-.inbound-pdf-table.inbound-pdf-table--pickup th[data-col="5"],
-.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="5"],
 .inbound-pdf-table.inbound-pdf-table--pickup th[data-col="6"],
-.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="6"] {
+.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="6"],
+.inbound-pdf-table.inbound-pdf-table--pickup th[data-col="7"],
+.inbound-pdf-table.inbound-pdf-table--pickup td[data-col="7"] {
   width: 52px;
   min-width: 52px;
   max-width: 52px;
@@ -870,38 +923,50 @@ table {
   transition: background 0.2s ease;
 }
 /* 文章が入るセルは折り返し許可（画像の「※都筑移動…」等） */
-.inbound-pdf-table td[data-col="4"],
-.inbound-pdf-table td[data-col="13"] {
+.inbound-pdf-table td[data-col="5"],
+.inbound-pdf-table td[data-col="14"] {
   white-space: pre-wrap;
   overflow: visible;
   text-overflow: clip;
 }
 
 /* 運転手セル（改行/自由入力を表示できるようにする） */
-.inbound-pdf-table td[data-col="9"] {
+.inbound-pdf-table td[data-col="10"] {
   white-space: pre-wrap;
   overflow: visible;
   text-overflow: clip;
 }
 .inbound-pdf-table td[data-col="1"],
 .inbound-pdf-table td[data-col="2"],
-.inbound-pdf-table td[data-col="5"],
 .inbound-pdf-table td[data-col="6"],
 .inbound-pdf-table td[data-col="7"],
 .inbound-pdf-table td[data-col="8"],
-.inbound-pdf-table td[data-col="12"] {
+.inbound-pdf-table td[data-col="9"],
+.inbound-pdf-table td[data-col="13"] {
   text-align: center;
 }
-.inbound-pdf-table th[data-col="5"],
-.inbound-pdf-table td[data-col="5"],
 .inbound-pdf-table th[data-col="6"],
-.inbound-pdf-table td[data-col="6"] {
+.inbound-pdf-table td[data-col="6"],
+.inbound-pdf-table th[data-col="7"],
+.inbound-pdf-table td[data-col="7"] {
   width: 52px;
   min-width: 52px;
   max-width: 52px;
 }
 .inbound-pdf-row-start td {
   border-top-width: 2px;
+}
+
+/* 搬入指示書（工場）：受注検索結果の見た目を維持しつつ、払出/回送費列だけ非表示 */
+.inbound-pdf-table.inbound-pdf-table--inbound-instruction colgroup col:nth-child(1),
+.inbound-pdf-table.inbound-pdf-table--inbound-instruction colgroup col:nth-child(17) {
+  display: none;
+}
+.inbound-pdf-table.inbound-pdf-table--inbound-instruction th[data-col="0"],
+.inbound-pdf-table.inbound-pdf-table--inbound-instruction td[data-col="0"],
+.inbound-pdf-table.inbound-pdf-table--inbound-instruction th[data-col="16"],
+.inbound-pdf-table.inbound-pdf-table--inbound-instruction td[data-col="16"] {
+  display: none;
 }
 
 /* 受注検索結果を画面いっぱいに広げる（メニュー上に被ってもOK） */
