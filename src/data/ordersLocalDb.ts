@@ -9,18 +9,26 @@ export type PickupDraft = {
 };
 
 const KEY_INBOUND_ROWS = "demo.ordersPdf.inboundRows.v2";
-const KEY_PICKUP_ROWS = "demo.ordersPdf.pickupRows.v2";
+// v3: 引取の初期デモデータを更新（期間/運転手/種類ID/種別ID/日付を含める）
+const KEY_PICKUP_ROWS = "demo.ordersPdf.pickupRows.v3";
 const KEY_INBOUND_DRAFT = "demo.ordersPdf.inboundDraft.v2";
 const KEY_PICKUP_DRAFT = "demo.ordersPdf.pickupDraft.v2";
 
-const TARGET_COLS = 17;
+// v0(=14列) -> v1(=15列: 払出/件数の2列追加) -> v2(=16列: 状態の1列追加) -> v3(=17列: 使用期間の1列追加)
+// -> v4(=18列: 不足燃料の1列追加 ※引取のみ表示だがデータ構造は共通で持つ)
+const TARGET_COLS = 18;
 
-// v0(=14列) -> v1(=15列: 払出/件数の2列追加) -> v2(=16列: 状態の1列追加) -> v3(=17列: 使用期間の1列追加) へ移行
-const migrateRowToV3 = (row: string[]): string[] => {
+// v0..v3 -> v4(=18列) へ移行
+const migrateRowToV4 = (row: string[]): string[] => {
   if (row.length === TARGET_COLS) return [...row];
+  if (row.length === 17) {
+    // v3: [0]払出 [1]状態 [2]件数 [3]使用期間 [4]場所 [5]機械名 [6]No [7]数量 [8]車輛 [9]ﾚｯｶｰ [10]運転手 [11]会社名 [12]現場 [13]時間 [14]備考 [15]アワー [16]回送費
+    // v4: ... + [17]不足燃料
+    return [...row, ""];
+  }
   if (row.length === 16) {
     // v2: [0]払出 [1]状態 [2]件数 [3]場所 [4]機械名 [5]No [6]数量 [7]車輛 [8]ﾚｯｶｰ [9]運転手 [10]会社名 [11]現場 [12]時間 [13]備考 [14]アワー [15]回送費
-    // v3: [0]払出 [1]状態 [2]件数 [3]使用期間 [4]場所 ...
+    // v4: [0]払出 [1]状態 [2]件数 [3]使用期間 [4]場所 ... [16]回送費 [17]不足燃料
     return [
       row[0] ?? "",
       row[1] ?? "",
@@ -38,12 +46,13 @@ const migrateRowToV3 = (row: string[]): string[] => {
       row[12] ?? "",
       row[13] ?? "",
       row[14] ?? "",
-      row[15] ?? ""
+      row[15] ?? "",
+      "" // 不足燃料
     ];
   }
   if (row.length === 15) {
     // v1: [0]払出 [1]件数 [2]場所 [3]機械名 [4]No [5]数量 [6]車輛 [7]ﾚｯｶｰ [8]運転手 [9]会社名 [10]現場 [11]時間 [12]備考 [13]アワー [14]回送費
-    // v3: [0]払出 [1]状態 [2]件数 [3]使用期間 [4]場所 ...
+    // v4: [0]払出 [1]状態 [2]件数 [3]使用期間 [4]場所 ... [16]回送費 [17]不足燃料
     return [
       row[0] ?? "",
       "",
@@ -61,12 +70,13 @@ const migrateRowToV3 = (row: string[]): string[] => {
       row[11] ?? "",
       row[12] ?? "",
       row[13] ?? "",
-      row[14] ?? ""
+      row[14] ?? "",
+      "" // 不足燃料
     ];
   }
   if (row.length === 14) {
     // v0(old): [0]空欄 [1]場所 [2]機械名 [3]No [4]数量 [5]車輛 [6]ﾚｯｶｰ [7]運転手 [8]会社名 [9]現場 [10]時間 [11]備考 [12]アワー [13]回送費
-    // v3: [0]払出 [1]状態 [2]件数 [3]使用期間 [4]場所 ...
+    // v4: [0]払出 [1]状態 [2]件数 [3]使用期間 [4]場所 ... [16]回送費 [17]不足燃料
     return [
       "",
       "",
@@ -84,14 +94,15 @@ const migrateRowToV3 = (row: string[]): string[] => {
       row[10] ?? "",
       row[11] ?? "",
       row[12] ?? "",
-      row[13] ?? ""
+      row[13] ?? "",
+      "" // 不足燃料
     ];
   }
   // best-effort: pad/truncate
   return Array.from({ length: TARGET_COLS }).map((_, idx) => String(row[idx] ?? ""));
 };
 
-const migrateRowsToV3 = (rows: string[][]): string[][] => rows.map((r) => migrateRowToV3(r));
+const migrateRowsToV4 = (rows: string[][]): string[][] => rows.map((r) => migrateRowToV4(r));
 
 // Hotfix for demo data that got persisted with older column shifts.
 // We keep this very small and surgical to avoid impacting real data.
@@ -122,6 +133,20 @@ const applyInboundRowsHotfixes = (rows: string[][]): string[][] => {
   });
 };
 
+// Hotfix: 過去の列ズレで「機械名」に "1" が入ってしまった引取データを除去する
+// v4 columns:
+// [4]場所 [5]機械名 [7]数量
+const applyPickupRowsHotfixes = (rows: string[][]): string[][] => {
+  return rows.filter((r) => {
+    const machine = String(r?.[5] ?? "").trim();
+    const location = String(r?.[4] ?? "").trim();
+    const qty = String(r?.[7] ?? "").trim();
+    // 典型: 追加商品行（場所が空）で機械名="1" かつ 数量が空
+    if (!location && machine === "1" && !qty) return false;
+    return true;
+  });
+};
+
 const safeParseJson = (raw: string | null): unknown => {
   if (!raw) return null;
   try {
@@ -139,12 +164,12 @@ const isStringArrayArray = (v: unknown): v is string[][] => {
 export const loadInboundRows = (fallback: string[][]): string[][] => {
   const parsed = safeParseJson(localStorage.getItem(KEY_INBOUND_ROWS));
   if (isStringArrayArray(parsed)) {
-    const migrated = applyInboundRowsHotfixes(migrateRowsToV3(parsed));
+    const migrated = applyInboundRowsHotfixes(migrateRowsToV4(parsed));
     // persist migration to avoid mixed formats causing "見え方が壊れる"
     saveInboundRows(migrated);
     return migrated.map((r) => [...r]);
   }
-  const migratedFallback = applyInboundRowsHotfixes(migrateRowsToV3(fallback));
+  const migratedFallback = applyInboundRowsHotfixes(migrateRowsToV4(fallback));
   return migratedFallback.map((r) => [...r]);
 };
 
@@ -160,11 +185,11 @@ export const clearInboundPersisted = () => {
 export const loadPickupRows = (fallback: string[][]): string[][] => {
   const parsed = safeParseJson(localStorage.getItem(KEY_PICKUP_ROWS));
   if (isStringArrayArray(parsed)) {
-    const migrated = migrateRowsToV3(parsed);
+    const migrated = applyPickupRowsHotfixes(migrateRowsToV4(parsed));
     savePickupRows(migrated);
     return migrated.map((r) => [...r]);
   }
-  const migratedFallback = migrateRowsToV3(fallback);
+  const migratedFallback = applyPickupRowsHotfixes(migrateRowsToV4(fallback));
   return migratedFallback.map((r) => [...r]);
 };
 
@@ -178,7 +203,7 @@ export const loadInboundDraft = (): InboundDraft | null => {
   const obj = parsed as { inboundDate?: unknown; rows?: unknown };
   if (typeof obj.inboundDate !== "string") return null;
   if (!isStringArrayArray(obj.rows)) return null;
-  const migrated = migrateRowsToV3(obj.rows);
+  const migrated = migrateRowsToV4(obj.rows);
   // persist migration
   saveInboundDraft({ inboundDate: obj.inboundDate, rows: migrated });
   return { inboundDate: obj.inboundDate, rows: migrated.map((r) => [...r]) };
@@ -198,7 +223,7 @@ export const loadPickupDraft = (): PickupDraft | null => {
   const obj = parsed as { pickupDate?: unknown; rows?: unknown };
   if (typeof obj.pickupDate !== "string") return null;
   if (!isStringArrayArray(obj.rows)) return null;
-  const migrated = migrateRowsToV3(obj.rows);
+  const migrated = applyPickupRowsHotfixes(migrateRowsToV4(obj.rows));
   // persist migration
   savePickupDraft({ pickupDate: obj.pickupDate, rows: migrated });
   return { pickupDate: obj.pickupDate, rows: migrated.map((r) => [...r]) };

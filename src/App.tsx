@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import FeaturePlaceholder from "./pages/FeaturePlaceholder";
 import DispatchInstructionPage from "./pages/DispatchInstructionPage";
 import OutboundRegisterPage from "./pages/OutboundRegisterPage";
+import InboundRegisterPage from "./pages/InboundRegisterPage";
 import InboundOrderDetailPage from "./pages/InboundOrderDetailPage";
 import InventoryCheckPage from "./pages/InventoryCheckPage";
 import MoveOrderCreatePage from "./pages/MoveOrderCreatePage";
@@ -23,6 +24,16 @@ const App = () => (
           <ProtectedRoute>
             <AppLayout>
               <OutboundRegisterPage />
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/factory/inbound-register"
+        element={
+          <ProtectedRoute>
+            <AppLayout>
+              <InboundRegisterPage />
             </AppLayout>
           </ProtectedRoute>
         }

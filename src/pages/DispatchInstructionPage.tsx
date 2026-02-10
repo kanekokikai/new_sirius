@@ -8,7 +8,7 @@ import {
   DispatchInstructionKey
 } from "../data/dispatchInstructions";
 import { inboundOrderSearchColumns, inboundOrderSearchColWidths, inboundOrderSearchRawRows } from "../data/inboundOrderSearchMock";
-import { loadInboundDraft, loadInboundRows, saveInboundRows } from "../data/ordersLocalDb";
+import { loadInboundDraft, loadInboundRows, loadPickupRows, saveInboundRows, savePickupRows } from "../data/ordersLocalDb";
 import { getTruckPlanRowsByDate, TruckPlanAction, TruckPlanRow } from "../data/truckPlanMock";
 import { TruckPlanEndReportModal } from "../components/TruckPlanEndReportModal";
 import { ConfirmMoveModal } from "../components/ConfirmMoveModal";
@@ -16,7 +16,9 @@ import { InboundPdfTable } from "../components/InboundPdfTable";
 import { MachineNoEditModal } from "../components/MachineNoEditModal";
 import { machineNoOptions } from "../data/inboundEditMock";
 import { SimpleValueEditModal } from "../components/SimpleValueEditModal";
+import { InsufficientFuelModal } from "../components/InsufficientFuelModal";
 import { Department } from "../types";
+import { pickupOrderSearchRawRows } from "../data/pickupOrderSearchPdfMock";
 
 const isValidInstructionKey = (key: string): key is DispatchInstructionKey =>
   Object.prototype.hasOwnProperty.call(dispatchInstructionLabels, key);
@@ -60,7 +62,8 @@ const INBOUND_PDF_COL = {
   time: 13,
   note: 14,
   hour: 15,
-  transportFee: 16
+  transportFee: 16,
+  insufficientFuel: 17
 } as const;
 
 type OrderStatus = "予約" | "確定" | "払出済" | "キャンセル" | "破棄";
@@ -79,6 +82,51 @@ const isPdfGroupStartRow = (row?: string[]) => {
   if (!row) return false;
   // NOTE: 受注検索結果（PDF再現）は「場所」列をグループ開始の基準にする
   return (row[INBOUND_PDF_COL.location] ?? "").trim().length > 0;
+};
+
+const parseMachineTypeFromCell = (value: string): { baseName: string; kindId?: string; typeId?: string } => {
+  const lines = String(value ?? "").split("\n");
+  const baseName = (lines[0] ?? "").trim();
+  const kindLine = lines.find((x) => x.trim().startsWith("種類ID:"));
+  const typeLine = lines.find((x) => x.trim().startsWith("種別ID:"));
+  const kindId = kindLine ? kindLine.replace("種類ID:", "").trim() : undefined;
+  const typeId = typeLine ? typeLine.replace("種別ID:", "").trim() : undefined;
+  return { baseName, kindId, typeId };
+};
+
+const formatProductNameForDisplay = (value: string): string => {
+  const raw = String(value ?? "");
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("※")) return raw; // 指示備考は全文表示
+  return (raw.split("\n")[0] ?? "").trim(); // 商品名だけ
+};
+
+const parseYmdToUtcMs = (raw: string): number | null => {
+  const v = (raw ?? "").trim();
+  const m = v.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  return Date.UTC(y, mo - 1, d);
+};
+
+const formatUsagePeriodCell = (valueRaw: string): string => {
+  const value = String(valueRaw ?? "").trim();
+  if (!value) return "";
+  if (value.includes("日間")) return value;
+
+  // expected: "YYYY-MM-DD～YYYY-MM-DD" (also accept 〜/~ or /)
+  const normalized = value.replace(/[〜～]/g, "~");
+  const [startRaw, endRaw] = normalized.split("~").map((x) => x?.trim() ?? "");
+  const startMs = parseYmdToUtcMs(startRaw);
+  const endMs = parseYmdToUtcMs(endRaw || startRaw);
+  if (startMs == null || endMs == null) return value;
+  const diffDays = Math.floor((endMs - startMs) / (24 * 60 * 60 * 1000));
+  const days = Math.max(1, diffDays + 1); // inclusive
+  return `${days}日間`;
 };
 
 const toIsoDateLocal = (d: Date) => {
@@ -739,6 +787,15 @@ const DispatchInstructionPage = () => {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [customer, setCustomer] = useState("");
+  const [inboundDriver, setInboundDriver] = useState("");
+  const [inboundKindId, setInboundKindId] = useState("");
+  const [inboundTypeId, setInboundTypeId] = useState("");
+  const [pickupDateFrom, setPickupDateFrom] = useState("");
+  const [pickupDateTo, setPickupDateTo] = useState("");
+  const [pickupCustomer, setPickupCustomer] = useState("");
+  const [pickupDriver, setPickupDriver] = useState("");
+  const [pickupKindId, setPickupKindId] = useState("");
+  const [pickupTypeId, setPickupTypeId] = useState("");
   const [truckPlanDate, setTruckPlanDate] = useState(() => toIsoDateLocal(new Date()));
   const [truckPlanDraftRows, setTruckPlanDraftRows] = useState<TruckPlanRow[]>([]);
   const [truckPlanDriverQuery, setTruckPlanDriverQuery] = useState("");
@@ -754,10 +811,22 @@ const DispatchInstructionPage = () => {
     value: string;
   } | null>(null);
   const [inboundRows, setInboundRows] = useState<string[][]>(() => loadInboundRows(inboundOrderSearchRawRows));
+  const [pickupRows, setPickupRows] = useState<string[][]>(() => loadPickupRows(pickupOrderSearchRawRows));
   const [inboundAppliedFilter, setInboundAppliedFilter] = useState(() => ({
     dateFrom: "",
     dateTo: "",
-    customer: ""
+    customer: "",
+    driver: "",
+    kindId: "",
+    typeId: ""
+  }));
+  const [pickupAppliedFilter, setPickupAppliedFilter] = useState(() => ({
+    dateFrom: "",
+    dateTo: "",
+    customer: "",
+    driver: "",
+    kindId: "",
+    typeId: ""
   }));
   const [machineNoModalOpen, setMachineNoModalOpen] = useState(false);
   const [machineNoTargetSourceRowIndex, setMachineNoTargetSourceRowIndex] = useState<number | null>(null);
@@ -765,6 +834,14 @@ const DispatchInstructionPage = () => {
   const [hourModalOpen, setHourModalOpen] = useState(false);
   const [hourTargetSourceRowIndex, setHourTargetSourceRowIndex] = useState<number | null>(null);
   const [hourInitial, setHourInitial] = useState("");
+  const [pickupHourModalOpen, setPickupHourModalOpen] = useState(false);
+  const [pickupHourTargetSourceRowIndex, setPickupHourTargetSourceRowIndex] = useState<number | null>(null);
+  const [pickupHourInitial, setPickupHourInitial] = useState("");
+  const [insufficientFuelModalOpen, setInsufficientFuelModalOpen] = useState(false);
+  const [insufficientFuelTargetSourceRowIndex, setInsufficientFuelTargetSourceRowIndex] = useState<number | null>(
+    null
+  );
+  const [insufficientFuelInitial, setInsufficientFuelInitial] = useState("");
   const machineNoClickTimerRef = useRef<number | null>(null);
   const machineNoLongPressFiredRef = useRef(false);
   const machineNoLongPressMs = 520;
@@ -836,6 +913,18 @@ const DispatchInstructionPage = () => {
   }, [resolvedKey]);
 
   useEffect(() => {
+    if (resolvedKey !== "pickup") return;
+    const refresh = () => setPickupRows(loadPickupRows(pickupOrderSearchRawRows));
+    refresh();
+    window.addEventListener("demo:pickupRowsUpdated", refresh as EventListener);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("demo:pickupRowsUpdated", refresh as EventListener);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [resolvedKey]);
+
+  useEffect(() => {
     return () => {
       if (numberClickTimerRef.current != null) {
         window.clearTimeout(numberClickTimerRef.current);
@@ -853,7 +942,10 @@ const DispatchInstructionPage = () => {
 
     const from = parseLooseDate(inboundAppliedFilter.dateFrom);
     const to = parseLooseDate(inboundAppliedFilter.dateTo);
-    const normalizedCustomer = inboundAppliedFilter.customer.trim().toLowerCase();
+    const customerQ = inboundAppliedFilter.customer.trim().toLowerCase();
+    const driverQ = inboundAppliedFilter.driver.trim().toLowerCase();
+    const kindIdQ = inboundAppliedFilter.kindId.trim().toLowerCase();
+    const typeIdQ = inboundAppliedFilter.typeId.trim().toLowerCase();
     const base = inboundRows;
 
     // Filter by group (so we don't cut a group in half).
@@ -875,6 +967,11 @@ const DispatchInstructionPage = () => {
           .slice(start, end)
           .map((r) => String(r?.[INBOUND_PDF_COL.customer] ?? "").trim())
           .find((x) => x.length > 0) ?? "";
+      const driverCell =
+        base
+          .slice(start, end)
+          .map((r) => String(r?.[INBOUND_PDF_COL.driver] ?? "").trim())
+          .find((x) => x.length > 0) ?? "";
       const timeCell =
         base
           .slice(start, end)
@@ -886,7 +983,28 @@ const DispatchInstructionPage = () => {
 
       if (from && dateObj && dateObj < from) continue;
       if (to && dateObj && dateObj > to) continue;
-      if (normalizedCustomer && !customerCell.toLowerCase().includes(normalizedCustomer)) continue;
+      if (customerQ && !customerCell.toLowerCase().includes(customerQ)) continue;
+      if (driverQ && !driverCell.toLowerCase().includes(driverQ)) continue;
+
+      // 種類/種別は、グループ内の「商品行（機械名が入っていて※行でない）」のどれかが一致すればOK
+      if (kindIdQ || typeIdQ) {
+        let ok = false;
+        for (let r = start; r < end; r += 1) {
+          const machineCell = String(base[r]?.[INBOUND_PDF_COL.machine] ?? "").trim();
+          if (!machineCell) continue;
+          if (machineCell.startsWith("※")) continue;
+          const parsed = parseMachineTypeFromCell(machineCell);
+          const kindId = String(parsed.kindId ?? "").toLowerCase();
+          const typeId = String(parsed.typeId ?? "").toLowerCase();
+          const kindOk = kindIdQ ? kindId.includes(kindIdQ) : true;
+          const typeOk = typeIdQ ? typeId.includes(typeIdQ) : true;
+          if (kindOk && typeOk) {
+            ok = true;
+            break;
+          }
+        }
+        if (!ok) continue;
+      }
 
       groupNo += 1;
       for (let r = start; r < end; r += 1) {
@@ -906,7 +1024,112 @@ const DispatchInstructionPage = () => {
       }
     }
     return { rows: next, rowRefs };
-  }, [inboundAppliedFilter.customer, inboundAppliedFilter.dateFrom, inboundAppliedFilter.dateTo, inboundRows, resolvedKey]);
+  }, [
+    inboundAppliedFilter.customer,
+    inboundAppliedFilter.dateFrom,
+    inboundAppliedFilter.dateTo,
+    inboundAppliedFilter.driver,
+    inboundAppliedFilter.kindId,
+    inboundAppliedFilter.typeId,
+    inboundRows,
+    resolvedKey
+  ]);
+
+  const pickupPdfFiltered = useMemo((): { rows: string[][]; rowRefs: number[] } => {
+    if (resolvedKey !== "pickup") return { rows: [], rowRefs: [] };
+
+    const from = parseLooseDate(pickupAppliedFilter.dateFrom);
+    const to = parseLooseDate(pickupAppliedFilter.dateTo);
+    const customerQ = pickupAppliedFilter.customer.trim().toLowerCase();
+    const driverQ = pickupAppliedFilter.driver.trim().toLowerCase();
+    const kindIdQ = pickupAppliedFilter.kindId.trim().toLowerCase();
+    const typeIdQ = pickupAppliedFilter.typeId.trim().toLowerCase();
+    const base = pickupRows;
+
+    const next: string[][] = [];
+    const rowRefs: number[] = [];
+    let groupNo = 0;
+    let i = 0;
+    while (i < base.length) {
+      while (i < base.length && !isPdfGroupStartRow(base[i])) i += 1;
+      if (i >= base.length) break;
+      const start = i;
+      i += 1;
+      while (i < base.length && !isPdfGroupStartRow(base[i])) i += 1;
+      const end = i; // exclusive
+
+      const customerCell =
+        base
+          .slice(start, end)
+          .map((r) => String(r?.[INBOUND_PDF_COL.customer] ?? "").trim())
+          .find((x) => x.length > 0) ?? "";
+      const driverCell =
+        base
+          .slice(start, end)
+          .map((r) => String(r?.[INBOUND_PDF_COL.driver] ?? "").trim())
+          .find((x) => x.length > 0) ?? "";
+      const timeCell =
+        base
+          .slice(start, end)
+          .map((r) => String(r?.[INBOUND_PDF_COL.time] ?? "").trim())
+          .find((x) => x.length > 0) ?? "";
+
+      const dateStr = extractDateFromTimeCell(timeCell);
+      const dateObj = dateStr ? parseLooseDate(dateStr) : null;
+
+      if (from && dateObj && dateObj < from) continue;
+      if (to && dateObj && dateObj > to) continue;
+      if (customerQ && !customerCell.toLowerCase().includes(customerQ)) continue;
+      if (driverQ && !driverCell.toLowerCase().includes(driverQ)) continue;
+
+      // 種類/種別は、グループ内の「商品行（機械名が入っていて※行でない）」のどれかが一致すればOK
+      if (kindIdQ || typeIdQ) {
+        let ok = false;
+        for (let r = start; r < end; r += 1) {
+          const machineCell = String(base[r]?.[INBOUND_PDF_COL.machine] ?? "").trim();
+          if (!machineCell) continue;
+          if (machineCell.startsWith("※")) continue;
+          const parsed = parseMachineTypeFromCell(machineCell);
+          const kindId = String(parsed.kindId ?? "").toLowerCase();
+          const typeId = String(parsed.typeId ?? "").toLowerCase();
+          const kindOk = kindIdQ ? kindId.includes(kindIdQ) : true;
+          const typeOk = typeIdQ ? typeId.includes(typeIdQ) : true;
+          if (kindOk && typeOk) {
+            ok = true;
+            break;
+          }
+        }
+        if (!ok) continue;
+      }
+
+      groupNo += 1;
+      for (let r = start; r < end; r += 1) {
+        const row = [...(base[r] ?? [])];
+        const isStart = isPdfGroupStartRow(row);
+        if (isStart) {
+          row[INBOUND_PDF_COL.issue] = "払出";
+          row[INBOUND_PDF_COL.groupNo] = String(groupNo);
+          if (!String(row[INBOUND_PDF_COL.status] ?? "").trim()) row[INBOUND_PDF_COL.status] = "予約";
+        } else {
+          row[INBOUND_PDF_COL.issue] = "";
+          row[INBOUND_PDF_COL.status] = "";
+          row[INBOUND_PDF_COL.groupNo] = "";
+        }
+        next.push(row);
+        rowRefs.push(r);
+      }
+    }
+    return { rows: next, rowRefs };
+  }, [
+    pickupAppliedFilter.customer,
+    pickupAppliedFilter.dateFrom,
+    pickupAppliedFilter.dateTo,
+    pickupAppliedFilter.driver,
+    pickupAppliedFilter.kindId,
+    pickupAppliedFilter.typeId,
+    pickupRows,
+    resolvedKey
+  ]);
 
   const inboundPdfTable = useMemo(() => {
     if (resolvedKey !== "inbound") return null;
@@ -1099,7 +1322,7 @@ const DispatchInstructionPage = () => {
                     textDecoration: isEmpty ? "none" : "underline",
                     touchAction: "manipulation"
                   }}
-                  title={canLongPress ? "クリック: 番号入力 / 長押し: 出入りくん" : "クリック: 番号入力"}
+                  title={canLongPress ? "クリック: 番号入力 / 長押し: 出入りくん（出庫登録）" : "クリック: 番号入力"}
                   aria-label={`No.を編集: ${display}`}
                 >
                   {displayLabel}
@@ -1148,6 +1371,9 @@ const DispatchInstructionPage = () => {
                 </button>
               );
             }
+            if (colIndex === INBOUND_PDF_COL.usagePeriod) {
+              return formatUsagePeriodCell(String(value ?? ""));
+            }
             if (colIndex === INBOUND_PDF_COL.status) {
               const { symbol, color } = statusToSymbolAndColor(String(value ?? ""));
               return (
@@ -1193,6 +1419,313 @@ const DispatchInstructionPage = () => {
       </div>
     );
   }, [inboundPdfFiltered, resolvedKey]);
+
+  const pickupPdfTable = useMemo(() => {
+    if (resolvedKey !== "pickup") return null;
+
+    const columns = [...inboundOrderSearchColumns, "不足燃料"];
+    const colWidths = [...inboundOrderSearchColWidths, "72px"];
+    const shownRows = pickupPdfFiltered.rows;
+    const shownRowRefs = pickupPdfFiltered.rowRefs;
+
+    const findGroupStart = (rowIndex: number) => {
+      let i = rowIndex;
+      while (i > 0 && !isPdfGroupStartRow(shownRows[i])) i -= 1;
+      return i;
+    };
+
+    const findGroupEnd = (groupStart: number) => {
+      let i = groupStart + 1;
+      while (i < shownRows.length && !isPdfGroupStartRow(shownRows[i])) i += 1;
+      return i;
+    };
+
+    const getMergedValueInGroup = (groupStart: number, colIndex: number) => {
+      const end = findGroupEnd(groupStart);
+      for (let i = groupStart; i < end; i += 1) {
+        const v = String(shownRows[i]?.[colIndex] ?? "").trim();
+        if (v) return v;
+      }
+      return "";
+    };
+
+    const buildInboundNavState = (rowIndex: number) => {
+      const src = shownRowRefs[rowIndex];
+      if (typeof src !== "number") return null;
+      const row = pickupRows[src] ?? [];
+      const machineNo = String(row[INBOUND_PDF_COL.machineNo] ?? "").trim();
+      if (!machineNo) return null;
+      const machineName = String(row[INBOUND_PDF_COL.machine] ?? "").trim();
+      if (!machineName) return null;
+      if (machineName.startsWith("※")) return null;
+
+      const qty = String(row[INBOUND_PDF_COL.quantity] ?? "").trim();
+      const machine = qty ? `${machineName}（${qty}台）` : machineName;
+
+      const groupStart = findGroupStart(rowIndex);
+      const timeCell = getMergedValueInGroup(groupStart, INBOUND_PDF_COL.time);
+      const dateFromTimeCell = extractDateFromTimeCell(timeCell);
+      const plannedDate = dateFromTimeCell || "";
+      const plannedTime = dateFromTimeCell ? extractTimeFromTimeCell(timeCell) : timeCell;
+
+      return {
+        department: activeDepartment,
+        instructionKey: resolvedKey,
+        instructionId: machineNo,
+        plannedDate,
+        plannedTime,
+        machine,
+        vehicle: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.vehicle),
+        wrecker: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.wrecker),
+        driver: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.driver),
+        customer: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.customer),
+        site: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.site),
+        note: getMergedValueInGroup(groupStart, INBOUND_PDF_COL.note),
+        hourMeter: String(row[INBOUND_PDF_COL.hour] ?? "")
+      };
+    };
+
+    return (
+      <div className="orders-results-fullbleed">
+        <p style={{ marginTop: 0, color: "#475569", fontSize: 12 }}>
+          受注管理の「受注検索結果（引取 / PDF再現）」と同じ見た目で表示します（デモ）
+        </p>
+        <InboundPdfTable
+          ariaLabel="受注検索結果（引取 / PDF再現）"
+          tableClassName="inbound-pdf-table--pickup"
+          columns={columns}
+          rows={shownRows}
+          colWidths={colWidths}
+          // 払出/件数/場所 + 右側の情報列はグループ内で縦結合
+          mergeColumnIndices={[
+            INBOUND_PDF_COL.issue,
+            INBOUND_PDF_COL.status,
+            INBOUND_PDF_COL.groupNo,
+            INBOUND_PDF_COL.usagePeriod,
+            INBOUND_PDF_COL.location,
+            INBOUND_PDF_COL.vehicle,
+            INBOUND_PDF_COL.wrecker,
+            INBOUND_PDF_COL.driver,
+            INBOUND_PDF_COL.customer,
+            INBOUND_PDF_COL.site,
+            INBOUND_PDF_COL.time,
+            INBOUND_PDF_COL.note,
+            INBOUND_PDF_COL.transportFee
+          ]}
+          mergeBlankCellsWithinGroup
+          groupStartColumnIndices={[INBOUND_PDF_COL.location]}
+          renderCell={({ rowIndex, colIndex, value, row }) => {
+            if (colIndex === INBOUND_PDF_COL.status) {
+              const { symbol, color } = statusToSymbolAndColor(String(value ?? ""));
+              return (
+                <span
+                  title={String(value ?? "").trim()}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: "100%",
+                    color,
+                    fontWeight: 900
+                  }}
+                >
+                  {symbol}
+                </span>
+              );
+            }
+            if (colIndex === INBOUND_PDF_COL.machineNo) {
+              const display = String(value ?? "");
+              const isEmpty = display.trim().length === 0;
+              const displayLabel = isEmpty ? "（未入力）" : display;
+              const isFactory = activeDepartment === "工場";
+              const canLongPress = isFactory && display.trim().length > 0;
+              return (
+                <button
+                  type="button"
+                  onPointerDown={(e) => {
+                    machineNoLongPressFiredRef.current = false;
+                    if (machineNoClickTimerRef.current != null) {
+                      window.clearTimeout(machineNoClickTimerRef.current);
+                      machineNoClickTimerRef.current = null;
+                    }
+                    if (!canLongPress) return;
+
+                    try {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    } catch {
+                      // ignore
+                    }
+
+                    machineNoClickTimerRef.current = window.setTimeout(() => {
+                      const navState = buildInboundNavState(rowIndex);
+                      if (!navState) return;
+                      machineNoLongPressFiredRef.current = true;
+                      navigate("/factory/inbound-register", { state: navState });
+                      machineNoClickTimerRef.current = null;
+                    }, machineNoLongPressMs);
+                  }}
+                  onPointerUp={() => {
+                    if (machineNoClickTimerRef.current != null) {
+                      window.clearTimeout(machineNoClickTimerRef.current);
+                      machineNoClickTimerRef.current = null;
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    if (machineNoClickTimerRef.current != null) {
+                      window.clearTimeout(machineNoClickTimerRef.current);
+                      machineNoClickTimerRef.current = null;
+                    }
+                  }}
+                  onPointerLeave={() => {
+                    if (machineNoClickTimerRef.current != null) {
+                      window.clearTimeout(machineNoClickTimerRef.current);
+                      machineNoClickTimerRef.current = null;
+                    }
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // long-press already navigated -> skip click behavior
+                    if (machineNoLongPressFiredRef.current) {
+                      machineNoLongPressFiredRef.current = false;
+                      return;
+                    }
+                    // 引取側は「クリック編集」は無し（要件は長押し遷移のみ）
+                  }}
+                  style={{
+                    width: "100%",
+                    minHeight: 18,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "2px 4px",
+                    border: "none",
+                    background: "transparent",
+                    cursor: canLongPress ? "pointer" : "default",
+                    color: isEmpty ? "#94a3b8" : "#0f172a",
+                    fontWeight: 700,
+                    textDecoration: isEmpty ? "none" : "underline",
+                    touchAction: "manipulation"
+                  }}
+                  title={canLongPress ? "長押し: 出入りくん（入庫登録）" : undefined}
+                  aria-label={`No.（長押しで入庫登録）: ${display}`}
+                >
+                  {displayLabel}
+                </button>
+              );
+            }
+            if (colIndex === INBOUND_PDF_COL.usagePeriod) {
+              return formatUsagePeriodCell(String(value ?? ""));
+            }
+            if (colIndex === INBOUND_PDF_COL.machine) {
+              return formatProductNameForDisplay(String(value ?? ""));
+            }
+            if (colIndex === INBOUND_PDF_COL.hour) {
+              const display = String(value ?? "");
+              const isEmpty = display.trim().length === 0;
+              const displayLabel = isEmpty ? "（未入力）" : display;
+              const machineCell = String(shownRows[rowIndex]?.[INBOUND_PDF_COL.machine] ?? "").trim();
+              const isEditableRow = Boolean(machineCell) && !machineCell.startsWith("※");
+              return (
+                <button
+                  type="button"
+                  disabled={!isEditableRow}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!isEditableRow) return;
+                    const src = shownRowRefs[rowIndex];
+                    if (typeof src !== "number") return;
+                    setPickupHourTargetSourceRowIndex(src);
+                    setPickupHourInitial(display);
+                    setPickupHourModalOpen(true);
+                  }}
+                  style={{
+                    width: "100%",
+                    minHeight: 18,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "2px 4px",
+                    border: "none",
+                    background: "transparent",
+                    cursor: isEditableRow ? "pointer" : "default",
+                    color: isEmpty ? "#94a3b8" : "#0f172a",
+                    fontWeight: 700,
+                    textDecoration: isEmpty ? "none" : "underline",
+                    touchAction: "manipulation"
+                  }}
+                  title={isEditableRow ? "クリック: アワーメータ入力" : undefined}
+                  aria-label={`アワーメータを編集: ${display}`}
+                >
+                  {displayLabel}
+                </button>
+              );
+            }
+            if (colIndex === INBOUND_PDF_COL.insufficientFuel) {
+              const display = String(value ?? "");
+              const isEmpty = display.trim().length === 0;
+              const displayLabel = isEmpty ? "（未入力）" : display;
+              const machineCell = String(shownRows[rowIndex]?.[INBOUND_PDF_COL.machine] ?? "").trim();
+              const isEditableRow = Boolean(machineCell) && !machineCell.startsWith("※");
+              return (
+                <button
+                  type="button"
+                  disabled={!isEditableRow}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!isEditableRow) return;
+                    const src = shownRowRefs[rowIndex];
+                    if (typeof src !== "number") return;
+                    setInsufficientFuelTargetSourceRowIndex(src);
+                    setInsufficientFuelInitial(display);
+                    setInsufficientFuelModalOpen(true);
+                  }}
+                  style={{
+                    width: "100%",
+                    minHeight: 18,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "2px 4px",
+                    border: "none",
+                    background: "transparent",
+                    cursor: isEditableRow ? "pointer" : "default",
+                    color: isEmpty ? "#94a3b8" : "#0f172a",
+                    fontWeight: 700,
+                    textDecoration: isEmpty ? "none" : "underline",
+                    touchAction: "manipulation"
+                  }}
+                  title={isEditableRow ? "クリック: 不足燃料入力" : undefined}
+                  aria-label={`不足燃料を編集: ${display}`}
+                >
+                  {displayLabel}
+                </button>
+              );
+            }
+            if (colIndex !== INBOUND_PDF_COL.issue) return row[colIndex];
+            if (!String(value ?? "").trim()) return "";
+            return (
+              <button
+                className="button"
+                type="button"
+                title="伝票発行（デモ）"
+                style={{ padding: "6px 10px", fontWeight: 800 }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  // 見た目合わせが目的のため、ここでは処理しない（受注管理側のデモ操作を使用）
+                }}
+              >
+                払出
+              </button>
+            );
+          }}
+        />
+      </div>
+    );
+  }, [pickupPdfFiltered.rowRefs, pickupPdfFiltered.rows, resolvedKey]);
 
   const truckPlanSlots = 6;
 
@@ -1464,11 +1997,51 @@ const DispatchInstructionPage = () => {
                 onChange={(e) => setCustomer(e.target.value)}
               />
             </div>
+            {activeDepartment === "工場" && (
+              <>
+                <div className="filter-group">
+                  <label>ドライバー</label>
+                  <input
+                    className="filter-input"
+                    placeholder="例) 小出 / 長谷川"
+                    value={inboundDriver}
+                    onChange={(e) => setInboundDriver(e.target.value)}
+                  />
+                </div>
+                <div className="filter-group">
+                  <label>種類コード</label>
+                  <input
+                    className="filter-input"
+                    placeholder="例) K01"
+                    value={inboundKindId}
+                    onChange={(e) => setInboundKindId(e.target.value)}
+                  />
+                </div>
+                <div className="filter-group">
+                  <label>種別コード</label>
+                  <input
+                    className="filter-input"
+                    placeholder="例) T01"
+                    value={inboundTypeId}
+                    onChange={(e) => setInboundTypeId(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 className="button primary"
                 type="button"
-                onClick={() => setInboundAppliedFilter({ dateFrom, dateTo, customer })}
+                onClick={() =>
+                  setInboundAppliedFilter({
+                    dateFrom,
+                    dateTo,
+                    customer,
+                    driver: activeDepartment === "工場" ? inboundDriver : "",
+                    kindId: activeDepartment === "工場" ? inboundKindId : "",
+                    typeId: activeDepartment === "工場" ? inboundTypeId : ""
+                  })
+                }
               >
                 検索
               </button>
@@ -1479,7 +2052,108 @@ const DispatchInstructionPage = () => {
                   setDateFrom("");
                   setDateTo("");
                   setCustomer("");
-                  setInboundAppliedFilter({ dateFrom: "", dateTo: "", customer: "" });
+                  setInboundDriver("");
+                  setInboundKindId("");
+                  setInboundTypeId("");
+                  setInboundAppliedFilter({ dateFrom: "", dateTo: "", customer: "", driver: "", kindId: "", typeId: "" });
+                }}
+              >
+                クリア
+              </button>
+            </div>
+          </div>
+        )}
+        {resolvedKey === "pickup" && (
+          <div className="filter-bar multi" style={{ marginBottom: 12 }}>
+            <div className="filter-group">
+              <label>期間（開始）</label>
+              <input
+                className="filter-input"
+                type="date"
+                value={pickupDateFrom}
+                onChange={(e) => setPickupDateFrom(e.target.value)}
+              />
+            </div>
+            <div className="filter-group">
+              <label>期間（終了）</label>
+              <input
+                className="filter-input"
+                type="date"
+                value={pickupDateTo}
+                onChange={(e) => setPickupDateTo(e.target.value)}
+              />
+            </div>
+            <div className="filter-group">
+              <label>会社名</label>
+              <input
+                className="filter-input"
+                placeholder="例) ABC建設 / 東西土木"
+                value={pickupCustomer}
+                onChange={(e) => setPickupCustomer(e.target.value)}
+              />
+            </div>
+            <div className="filter-group">
+              <label>ドライバー</label>
+              <input
+                className="filter-input"
+                placeholder="例) 小出 / 長谷川"
+                value={pickupDriver}
+                onChange={(e) => setPickupDriver(e.target.value)}
+              />
+            </div>
+            <div className="filter-group">
+              <label>種類コード</label>
+              <input
+                className="filter-input"
+                placeholder="例) K01"
+                value={pickupKindId}
+                onChange={(e) => setPickupKindId(e.target.value)}
+              />
+            </div>
+            <div className="filter-group">
+              <label>種別コード</label>
+              <input
+                className="filter-input"
+                placeholder="例) T01"
+                value={pickupTypeId}
+                onChange={(e) => setPickupTypeId(e.target.value)}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="button primary"
+                type="button"
+                onClick={() =>
+                  setPickupAppliedFilter({
+                    dateFrom: pickupDateFrom,
+                    dateTo: pickupDateTo,
+                    customer: pickupCustomer,
+                    driver: pickupDriver,
+                    kindId: pickupKindId,
+                    typeId: pickupTypeId
+                  })
+                }
+              >
+                検索
+              </button>
+              <button
+                className="button"
+                type="button"
+                onClick={() => {
+                  setPickupDateFrom("");
+                  setPickupDateTo("");
+                  setPickupCustomer("");
+                  setPickupDriver("");
+                  setPickupKindId("");
+                  setPickupTypeId("");
+                  setPickupAppliedFilter({
+                    dateFrom: "",
+                    dateTo: "",
+                    customer: "",
+                    driver: "",
+                    kindId: "",
+                    typeId: ""
+                  });
                 }}
               >
                 クリア
@@ -1511,6 +2185,8 @@ const DispatchInstructionPage = () => {
           </div>
         ) : resolvedKey === "inbound" ? (
           inboundPdfTable
+        ) : resolvedKey === "pickup" ? (
+          pickupPdfTable
         ) : (
           filteredSections.map((section) => {
           // NOTE: This branch is only for pickup/transfer (inbound is rendered by InboundPdfTable above).
@@ -1667,7 +2343,11 @@ const DispatchInstructionPage = () => {
                           }
                           // 機械名セルはクリックで遷移させない（通常表示）
                           if (isMachineCell) {
-                            return <td key={`${section.title}-${idx}-${cidx}`}>{cell}</td>;
+                            return (
+                              <td key={`${section.title}-${idx}-${cidx}`}>
+                                {formatProductNameForDisplay(String(cell ?? ""))}
+                              </td>
+                            );
                           }
 
                           return <td key={`${section.title}-${idx}-${cidx}`}>{cell}</td>;
@@ -1904,6 +2584,64 @@ const DispatchInstructionPage = () => {
               setHourModalOpen(false);
               setHourTargetSourceRowIndex(null);
               setHourInitial("");
+            }}
+          />
+        )}
+        {resolvedKey === "pickup" && (
+          <SimpleValueEditModal
+            open={pickupHourModalOpen}
+            title="アワーメータ 入力（デモ）"
+            description="アワー列をクリックして入力するデモモーダルです。"
+            mode="text"
+            initialValue={pickupHourInitial}
+            placeholder="例) 1234 / 1234.5"
+            onClose={() => {
+              setPickupHourModalOpen(false);
+              setPickupHourTargetSourceRowIndex(null);
+              setPickupHourInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              const src = pickupHourTargetSourceRowIndex;
+              if (src == null) return;
+              setPickupRows((prev) => {
+                const next = prev.map((r) => [...r]);
+                const row = next[src];
+                if (!row) return prev;
+                row[INBOUND_PDF_COL.hour] = nextValue;
+                savePickupRows(next);
+                window.dispatchEvent(new CustomEvent("demo:pickupRowsUpdated"));
+                return next;
+              });
+              setPickupHourModalOpen(false);
+              setPickupHourTargetSourceRowIndex(null);
+              setPickupHourInitial("");
+            }}
+          />
+        )}
+        {resolvedKey === "pickup" && (
+          <InsufficientFuelModal
+            open={insufficientFuelModalOpen}
+            initialValue={insufficientFuelInitial}
+            onClose={() => {
+              setInsufficientFuelModalOpen(false);
+              setInsufficientFuelTargetSourceRowIndex(null);
+              setInsufficientFuelInitial("");
+            }}
+            onConfirm={(nextValue) => {
+              const src = insufficientFuelTargetSourceRowIndex;
+              if (src == null) return;
+              setPickupRows((prev) => {
+                const next = prev.map((r) => [...r]);
+                const row = next[src];
+                if (!row) return prev;
+                row[INBOUND_PDF_COL.insufficientFuel] = nextValue;
+                savePickupRows(next);
+                window.dispatchEvent(new CustomEvent("demo:pickupRowsUpdated"));
+                return next;
+              });
+              setInsufficientFuelModalOpen(false);
+              setInsufficientFuelTargetSourceRowIndex(null);
+              setInsufficientFuelInitial("");
             }}
           />
         )}

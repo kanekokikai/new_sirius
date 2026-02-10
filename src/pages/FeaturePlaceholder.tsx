@@ -344,7 +344,24 @@ const FeaturePlaceholder = () => {
 
   useEffect(() => {
     savePickupRows(pickupRows);
+    // Notify other pages (e.g. dispatch instruction) to refresh immediately.
+    window.dispatchEvent(new CustomEvent("demo:pickupRowsUpdated"));
   }, [pickupRows]);
+
+  // Hotfix: 過去のバグで「機械名」列に "1" が入ってしまった不正行を自動で削除する
+  // - 典型パターン: 機械名="1", 数量が空（古い列ズレ実装による）
+  useEffect(() => {
+    setPickupRows((prev) => {
+      const cleaned = prev.filter((r) => {
+        const machine = String(r?.[COL.machine] ?? "").trim();
+        const qty = String(r?.[COL.quantity] ?? "").trim();
+        if (machine === "1" && !qty) return false;
+        return true;
+      });
+      return cleaned.length === prev.length ? prev : cleaned;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     saveInboundDraft(inboundDraft);
@@ -542,6 +559,33 @@ const FeaturePlaceholder = () => {
     return hh * 60 + mm;
   };
 
+  const parseYmdToUtcMs = (raw: string): number | null => {
+    const v = (raw ?? "").trim();
+    const m = v.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+    return Date.UTC(y, mo - 1, d);
+  };
+
+  const formatUsagePeriodCell = (valueRaw: string): string => {
+    const value = String(valueRaw ?? "").trim();
+    if (!value) return "";
+    if (value.includes("日間")) return value;
+
+    // expected: "YYYY-MM-DD～YYYY-MM-DD" (also accept 〜/~ or /)
+    const normalized = value.replace(/[〜～]/g, "~");
+    const [startRaw, endRaw] = normalized.split("~").map((x) => x?.trim() ?? "");
+    const startMs = parseYmdToUtcMs(startRaw);
+    const endMs = parseYmdToUtcMs(endRaw || startRaw);
+    if (startMs == null || endMs == null) return value;
+    const diffDays = Math.floor((endMs - startMs) / (24 * 60 * 60 * 1000));
+    const days = Math.max(1, diffDays + 1); // inclusive
+    return `${days}日間`;
+  };
+
   const COL = {
     issue: 0, // 払出（ボタン）
     status: 1, // 状態（予約/確定/払出済/キャンセル/破棄）
@@ -622,6 +666,17 @@ const FeaturePlaceholder = () => {
     const kindId = kindLine ? kindLine.replace("種類ID:", "").trim() : undefined;
     const categoryId = categoryLine ? categoryLine.replace("種別ID:", "").trim() : undefined;
     return { baseName, kindId, categoryId };
+  };
+
+  const formatProductNameForDisplay = (value: string): string => {
+    const raw = String(value ?? "");
+    const trimmed = raw.trim();
+    if (!trimmed) return "";
+    // 指示備考行（※...）は全文表示
+    if (trimmed.startsWith("※")) return raw;
+    // 「商品名\n種類ID:...\n種別ID:...」のような形式は先頭行（商品名）だけ表示
+    const firstLine = raw.split("\n")[0] ?? "";
+    return firstLine.trim();
   };
 
   const insertOrdersPdfRowsAfterDisplayRow = (displayRowIndex: number, newRows: string[][]) => {
@@ -1233,6 +1288,12 @@ const FeaturePlaceholder = () => {
   const shouldShowAnyOrdersPdfResult = shouldShowOrdersPdfResult || shouldShowMixedOrdersPdfResult;
 
   const ordersPdfTitleLabel = shouldShowMixedOrdersPdfResult ? "搬入＋引取" : ordersPdfKindLabel;
+
+  // 引取だけ検索のときだけ「不足燃料」列を追加（回送費の右）
+  const pickupOnlyOrdersPdfColumns = [...inboundOrderSearchColumns, "不足燃料"];
+  const pickupOnlyOrdersPdfColWidths = [...inboundOrderSearchColWidths, "72px"];
+  const ordersPdfColumns = shouldShowPickupOrdersPdfResult ? pickupOnlyOrdersPdfColumns : inboundOrderSearchColumns;
+  const ordersPdfColWidths = shouldShowPickupOrdersPdfResult ? pickupOnlyOrdersPdfColWidths : inboundOrderSearchColWidths;
 
   const ordersPdfDisplay = useMemo((): { rows: string[][]; rowRefs: OrdersPdfRowRef[] } => {
     if (!feature || feature.key !== "orders") return { rows: [], rowRefs: [] };
@@ -2082,7 +2143,7 @@ const FeaturePlaceholder = () => {
       >
         <InboundPdfTable
           ariaLabel={`${ordersPdfTitleLabel} 受注検索結果（PDF再現）`}
-          columns={inboundOrderSearchColumns}
+          columns={ordersPdfColumns}
           rows={ordersPdfShownRows}
           tableClassName={shouldShowPickupOrdersPdfResult ? "inbound-pdf-table--pickup" : undefined}
           sortableColumnIndices={[COL.status, COL.vehicle, COL.wrecker, COL.time]}
@@ -2099,6 +2160,12 @@ const FeaturePlaceholder = () => {
                   {symbol}
                 </span>
               );
+            }
+            if (colIndex === COL.usagePeriod) {
+              return formatUsagePeriodCell(String(value ?? ""));
+            }
+            if (colIndex === COL.machine) {
+              return formatProductNameForDisplay(String(value ?? ""));
             }
             if (colIndex !== COL.issue) return row[colIndex];
             // rowSpan のアンカー（ordersPdfShownRows で "払出" を入れている）
@@ -2197,7 +2264,7 @@ const FeaturePlaceholder = () => {
             }
             return classes.join(" ") || undefined;
           }}
-          colWidths={inboundOrderSearchColWidths}
+          colWidths={ordersPdfColWidths}
           // 払出/件数/場所 + 右側の情報列はグループ内で縦結合
           mergeColumnIndices={[
             COL.issue,
@@ -2212,7 +2279,6 @@ const FeaturePlaceholder = () => {
             COL.site,
             COL.time,
             COL.note,
-            COL.hour,
             COL.transportFee
           ]}
           mergeBlankCellsWithinGroup
@@ -2484,7 +2550,6 @@ const FeaturePlaceholder = () => {
                   COL.site,
                   COL.time,
                   COL.note,
-                  COL.hour,
                   COL.transportFee
                 ]}
                 mergeBlankCellsWithinGroup
@@ -2543,9 +2608,9 @@ const FeaturePlaceholder = () => {
               </p>
               <InboundPdfTable
                 ariaLabel="新規登録エリア（引取）"
-                columns={inboundOrderSearchColumns}
+                columns={ordersPdfColumns}
                 rows={pickupDraftShownRows}
-                colWidths={inboundOrderSearchColWidths}
+                colWidths={ordersPdfColWidths}
                 mergeColumnIndices={[
                   COL.issue,
                   COL.status,
@@ -2559,7 +2624,6 @@ const FeaturePlaceholder = () => {
                   COL.site,
                   COL.time,
                   COL.note,
-                  COL.hour,
                   COL.transportFee
                 ]}
                 mergeBlankCellsWithinGroup
@@ -3465,57 +3529,88 @@ const FeaturePlaceholder = () => {
 
               setPickupRows((prev) => {
                 const next = [...prev];
-                const base = [...(next[targetSrcIndex] ?? Array.from({ length: inboundOrderSearchColumns.length }).map(() => ""))];
-                const currentMachineName = String(base[3] ?? "").trim();
+                const makeEmptyRow = () => Array.from({ length: pickupOnlyOrdersPdfColumns.length }).map(() => "");
 
-                // 反映時に「ピン留め（=ダブルクリックした行の機械）」が未選択なら、その行を削除（直下の指示備考も削除）
+                // グループ範囲（location列が埋まっている行を起点）を算出
+                let groupStart = targetSrcIndex;
+                while (groupStart > 0 && !isPdfGroupStartRow(next[groupStart])) groupStart -= 1;
+                let groupEnd = groupStart + 1;
+                while (groupEnd < next.length && !isPdfGroupStartRow(next[groupEnd])) groupEnd += 1;
+
+                // ピン留め（=ダブルクリックした行の機械）
                 const pinnedId = pickupOrdersMachinePinnedId.trim();
+                const pinnedName = pickupOrdersMachinePinnedName.trim();
                 const wantsPinned = pinnedId ? selectedIds.includes(pinnedId) : true;
-                if (!wantsPinned && currentMachineName) {
-                  if (isInstructionNoteRow(next[targetSrcIndex + 1])) next.splice(targetSrcIndex + 1, 1);
-                  next.splice(targetSrcIndex, 1);
+
+                // 選択結果がゼロなら「その機械を引き取らない」= グループごと削除
+                const selectedSet = new Set(selectedNames);
+                if (selectedSet.size === 0) {
+                  // グループ内（指示備考含む）を全削除
+                  next.splice(groupStart, groupEnd - groupStart);
                   return next;
                 }
 
-                // 追加分は対象行の直下に、1商品=1行で挿入（ただし表に載っていないものだけ）
-                const inTableSet = new Set(pickupOrdersMachineInTableNames.map((x) => x.trim()).filter(Boolean));
-                const toAddNames = selectedNames
-                  .filter((name) => name && name !== currentMachineName)
-                  .filter((name) => !inTableSet.has(name));
-                const rowsToInsert = toAddNames.map((name) => {
-                  const row = Array.from({ length: inboundOrderSearchColumns.length }).map(() => "");
-                  row[3] = name;
-                  row[5] = "1";
-                  return row;
-                });
-
-                if (rowsToInsert.length > 0) {
-                  // 指示備考が直下にある場合は、その下に追加商品を並べる
-                  const hasNoteDirectlyBelow = isInstructionNoteRow(next[targetSrcIndex + 1]);
-                  const insertAt = hasNoteDirectlyBelow ? targetSrcIndex + 2 : targetSrcIndex + 1;
-                  next.splice(insertAt, 0, ...rowsToInsert);
+                // 現在グループ内の「商品行」（指示備考を除く）
+                const groupRows = next.slice(groupStart, groupEnd);
+                const existingProductRows: Array<{ row: string[]; machineName: string }> = [];
+                for (const r of groupRows) {
+                  if (isInstructionNoteRow(r)) continue;
+                  const name = String(r?.[COL.machine] ?? "").trim();
+                  if (!name) continue;
+                  if (name.startsWith("※")) continue;
+                  existingProductRows.push({ row: r, machineName: name });
                 }
 
-                // 指示備考は「商品が1つだけ選ばれている場合のみ」有効（=複数選択時は触らない）
+                // 既存行を順序維持で残す（未選択は削除）
+                const kept: string[][] = [];
+                const keptNames = new Set<string>();
+                for (const p of existingProductRows) {
+                  if (!selectedSet.has(p.machineName)) continue;
+                  kept.push([...p.row]);
+                  keptNames.add(p.machineName);
+                }
+
+                // 新たに選択されたが表に無いものを追加（1商品=1行）
+                for (const name of selectedNames) {
+                  if (!name || keptNames.has(name)) continue;
+                  const row = makeEmptyRow();
+                  row[COL.machine] = name;
+                  row[COL.quantity] = "1";
+                  kept.push(row);
+                  keptNames.add(name);
+                }
+
+                // ピン留め機械が未選択なら、その行も残さない（＝チェック外しで削除）
+                if (!wantsPinned && pinnedName) {
+                  const filtered = kept.filter((r) => String(r?.[COL.machine] ?? "").trim() !== pinnedName);
+                  kept.length = 0;
+                  kept.push(...filtered);
+                }
+
+                if (kept.length === 0) {
+                  next.splice(groupStart, groupEnd - groupStart);
+                  return next;
+                }
+
+                // グループ先頭行の「場所/会社名/時間」などは維持したいので、元の先頭行をベースにして機械名だけ差し替える
+                const originalGroupStartRow = [...(next[groupStart] ?? makeEmptyRow())];
+                const firstProduct = kept[0] ?? makeEmptyRow();
+                originalGroupStartRow[COL.machine] = String(firstProduct?.[COL.machine] ?? "").trim();
+                originalGroupStartRow[COL.quantity] = String(firstProduct?.[COL.quantity] ?? "").trim();
+
+                const rebuilt: string[][] = [originalGroupStartRow, ...kept.slice(1)];
+
+                // 指示備考: 1商品選択 + ピン留め有効のときのみ反映（従来仕様）
                 const noteText = normalizeInstructionNoteForCell(instructionNote);
-                const maybeNext = next[targetSrcIndex + 1];
-                const hasNoteDirectlyBelow = isInstructionNoteRow(maybeNext);
-                if (selectedIds.length === 1 && wantsPinned) {
-                  if (noteText) {
-                    if (hasNoteDirectlyBelow) {
-                      const updated = [...maybeNext];
-                      updated[3] = noteText;
-                      updated[5] = "";
-                      next[targetSrcIndex + 1] = updated;
-                    } else {
-                      const noteRow = Array.from({ length: inboundOrderSearchColumns.length }).map(() => "");
-                      noteRow[3] = noteText;
-                      noteRow[5] = "";
-                      next.splice(targetSrcIndex + 1, 0, noteRow);
-                    }
-                  }
+                if (selectedIds.length === 1 && wantsPinned && noteText) {
+                  const noteRow = makeEmptyRow();
+                  noteRow[COL.machine] = noteText;
+                  noteRow[COL.quantity] = "";
+                  rebuilt.splice(1, 0, noteRow); // 先頭商品の直下
                 }
 
+                // 既存グループ（指示備考含む）を置換
+                next.splice(groupStart, groupEnd - groupStart, ...rebuilt);
                 return next;
               });
 

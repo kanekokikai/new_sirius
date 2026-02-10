@@ -39,7 +39,8 @@ const SideMenu = ({ onNavigate }: { onNavigate?: () => void }) => {
     { label: "機械管理", to: "/feature/machine", featureKey: "machine" },
     { label: "受注管理", to: "/feature/orders", featureKey: "orders" },
     { label: "現場管理", to: "/feature/sites", featureKey: "sites" },
-    { label: "出庫登録", to: "/factory/outbound-register", featureKey: "dispatch" }
+    { label: "出庫登録", to: "/factory/outbound-register", featureKey: "dispatch" },
+    { label: "入庫登録", to: "/factory/inbound-register", featureKey: "dispatch" }
   ];
 
   const visibleItems = items.filter((x) => !x.featureKey || allowed.has(x.featureKey));
